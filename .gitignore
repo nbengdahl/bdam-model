@@ -1,0 +1,14 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+bin/
+Geometry/
+ModelInput/
+Runs/
+Runs_backup_*/
+.year_*.publishing-*/
+staging/
+matplotlib-cache/
+model_runner.log
+*.tar.gz

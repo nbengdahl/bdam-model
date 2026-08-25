@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use BDam, please cite the software using this metadata."
+title: "BDam"
+type: software
+authors:
+  - family-names: "Engdahl"
+    given-names: "Nick"
+version: 0.1.0
+date-released: 2026-08-24
+url: "https://github.com/nbengdahl/bdam-model"
+repository-code: "https://github.com/nbengdahl/bdam-model"
+license: MIT
+abstract: >-
+  A reproducible MATLAB, FloPy, and MODFLOW 6 framework for comparing
+  groundwater and surface-water behavior before and after installation of a
+  beaver dam analog.
+keywords:
+  - MODFLOW 6
+  - FloPy
+  - groundwater
+  - surface water
+  - beaver dam analog
