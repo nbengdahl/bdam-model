@@ -229,6 +229,59 @@ geometry file or portable ZIP. The scripted workflow remains the reproducible
 model-building path. Once settings are accepted, place them in
 `MakeGrid.m` and run the three standard build commands.
 
+## Graphical results viewer
+
+After a run is complete and all result files are closed, open the viewer from
+MATLAB while the package directory is current:
+
+```matlab
+LaunchBDamResultsViewerApp
+```
+
+The default field is `../BDam_out` relative to the package. Launching or
+browsing only selects a folder; click Load before any output is read. To
+preselect another run, pass its complete output root:
+
+```matlab
+LaunchBDamResultsViewerApp("/absolute/path/to/completed/BDam")
+```
+
+The root must contain `Geometry/BDamGeometry.mat` and `Runs/`, including the
+monitored summary CSV, each completed workspace's `bdam.hds`, and
+`monitoring_targets.csv`. Spinup outputs are required only when at least one
+spinup year was configured. The viewer never writes to these outputs.
+
+The upper panel shows the complete selected monitoring series and a moving
+current-time line. Any number of variables may be selected, but they may use
+at most two unit families; the viewer assigns those families to the left and
+right y-axes. Head-monitor locations are always shown on the lower map, and
+selected head monitors are highlighted and optionally labeled.
+
+The lower-panel assignment matrix has rows for signed depth to groundwater
+and groundwater water-surface elevation, with columns for Color raster and
+Contours. Exactly one raster quantity is always selected, while contours are
+optional. Each column accepts at most one quantity, and selecting a conflicting
+cell swaps assignments automatically. Depth is calculated as land elevation
+minus the uppermost valid groundwater head.
+
+Negative depth indicates head above land surface. Color and contour limits are
+held fixed across the selected scope so animation frames remain comparable.
+Use the scope menu to view Spinup, Monitored pre/post, or All phases; the All
+timeline offsets monitored results by the final spinup time. With zero spinup,
+the Spinup scope is omitted and All matches the monitored timeline. The slider,
+previous/next buttons, playback rate, Play/Pause button, and Loop option all
+operate on saved MF6 head times. The Transpose map axes option places Y on the
+horizontal axis and X on the vertical axis without changing model data. It is
+selected automatically when the domain's Y span exceeds its X span so long,
+narrow domains fill the lower plot more effectively.
+
+Load also preprocesses every unique saved head frame into an in-memory
+groundwater-surface cube. The status panel reports the resulting cache size;
+animation then uses array indexing rather than rereading `bdam.hds`. A 512 MiB
+limit prevents unexpectedly large allocations. Runs above that limit remain
+usable through indexed on-demand reads and display a performance warning. The
+viewer does not create cache files or alter the selected output folder.
+
 ## Inputs the user selects
 
 Every editable model-preparation input is near the top of either

@@ -4,6 +4,15 @@ All notable changes to BDam will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- A MATLAB results viewer for completed runs, including indexed MF6 head-file
+  reading, spinup/monitored/all timeline scopes, dual-unit monitoring plots,
+  assignable groundwater depth/elevation rasters and contours, automatic
+  long-domain map transposition, explicit output loading, in-memory head-field
+  preprocessing, persistent graphics updates, and fixed-rate animation controls
+  through 20 frames per second.
+
 ### Changed
 
 - Python requirements are now installed once for the user's selected
@@ -12,6 +21,9 @@ All notable changes to BDam will be documented in this file.
 - Agent instructions explicitly prohibit per-run Python environments and do
   not assume a particular Python distributor or operating-system package
   manager.
+- The results loader and viewer now accept intentionally absent spinup outputs
+  when all staged-spinup counts are zero; monitored and all timelines begin at
+  day zero without exposing an invalid Spinup scope.
 
 ## [0.1.0] - 2026-08-24
 

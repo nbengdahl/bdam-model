@@ -124,6 +124,40 @@ The app can export `BDamGeometry.mat` or a portable geometry ZIP. The standard
 model workflow remains reproducible through `MakeGrid.m`; use that script
 to build `Geometry/BDamGeometry.mat` before running `MakeInputs.m`.
 
+To inspect a completed simulation, launch the results viewer:
+
+```matlab
+LaunchBDamResultsViewerApp
+```
+
+With no argument it preselects `../BDam_out` relative to the packaged source.
+The viewer does not read any output until the user clicks Load. Pass another
+complete output root to preselect it when needed:
+
+```matlab
+LaunchBDamResultsViewerApp("/absolute/path/to/completed/BDam")
+```
+
+The selected root must contain `Geometry/BDamGeometry.mat`, `Runs/`, the run
+summary CSVs, annual or staged `bdam.hds` files, and their
+`monitoring_targets.csv` files. The viewer reads these files without changing
+them. Spinup files are optional when all three configured spinup counts were
+zero; in that case the viewer offers only the monitored and all scopes, with
+no timeline offset. Its upper panel plots selected monitoring series on at most two y-axis
+unit families. A compact lower-panel assignment matrix independently chooses
+depth to water or groundwater elevation for the required color raster and the
+optional contours; conflicting selections swap cleanly. Negative depth means
+groundwater head is above land surface. The time slider can span
+spinup, the monitored pre-/post-dam comparison, or both, and the Play control
+animates the saved head fields. A display-only map transpose swaps X and Y to
+use wide plotting space more effectively; it is enabled automatically when
+the domain's Y span is greater than its X span and can be toggled at any time.
+When Load is clicked, the viewer preprocesses each unique binary head frame
+into an in-memory 2-D groundwater-surface field. Runs requiring at most 512 MiB
+are animated entirely from this cache; larger runs retain indexed on-demand
+reading and report that fallback in the status panel. No cache files are
+written to the output root.
+
 Edit only the user-defined settings near the top of `MakeInputs.m` for
 aquifer, forcing, and run configuration. The principal duration settings are:
 
@@ -155,7 +189,10 @@ zero represents October 1; all time-varying inputs are circularly shifted from
 their source calendar-year order, while internal elapsed-time counters remain
 unchanged. All stages remain transient and preserve groundwater, lake, and UZF
 storage continuously.
-The final staged state initializes the first pre-dam year exactly. Spinup always
+When all three counts are zero, the first monitored year starts directly from
+the configured analytical initial heads, lake stages, and UZF water content;
+no spinup workspace or `spinup_summary.csv` is produced. Otherwise, the final
+staged state initializes the first pre-dam year exactly. Spinup always
 ends at weekly resolution when a weekly stage is requested, even when monitored
 years use daily resolution. The monitored duration is `pre_dam_years +
 post_dam_years`; set `post_dam_years = 0` for a no-dam run.
@@ -309,6 +346,8 @@ default 1/1/1 settings it contains 77 rows: one initial state plus 12 mean,
 CSVs and `bdam.fluxes.csv` are generated at every saved step in the staged
 spinup workspace and every pre-dam and post-dam annual workspace. Flux rates are m3/day and
 interval-integrated volumes are m3.
+When all spinup counts are zero, `Runs/spinup_summary.csv` and
+`Runs/spinup/staged` are intentionally absent.
 
 In the flux interface, `in_total` and `out_total` are coupled-system external
 fluxes. Inputs are land infiltration, lake precipitation, upstream surface

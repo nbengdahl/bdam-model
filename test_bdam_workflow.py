@@ -26,6 +26,7 @@ from build_bdam_simulation import (  # noqa: E402
     _validate_calendar,
     _validate_monitoring_outputs,
     _write_summary,
+    run_from_handoff,
 )
 
 
@@ -150,6 +151,60 @@ class BDamWorkflowTests(unittest.TestCase):
             with path.open(newline="") as stream:
                 written = list(csv.DictReader(stream))
         self.assertEqual([row["event"] for row in written], ["initial", "completed_step"])
+
+    def test_zero_spinup_starts_first_monitored_year_directly(self) -> None:
+        class FakeHandoff:
+            def __init__(self, scenario: str) -> None:
+                self.manifest = {"scenario": scenario, "time_resolution": "weekly"}
+
+            def scalar(self, path: str) -> float:
+                values = {
+                    "/mf6_parameters/mean_forcing_spinup_years": 0,
+                    "/mf6_parameters/monthly_spinup_years": 0,
+                    "/mf6_parameters/weekly_spinup_years": 0,
+                    "/mf6_parameters/pre_dam_years": 1,
+                    "/mf6_parameters/post_dam_years": 0,
+                }
+                return values[path]
+
+            def array(self, path: str, dtype=float) -> np.ndarray:
+                self.assert_calendar_path(path)
+                return np.asarray([365.0], dtype=dtype)
+
+            @staticmethod
+            def assert_calendar_path(path: str) -> None:
+                if path != "/calendar/perlen_days":
+                    raise AssertionError(f"Unexpected array request: {path}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model_input = root / "ModelInput"
+            for scenario in ("pre_dam", "post_dam"):
+                scenario_path = model_input / scenario
+                scenario_path.mkdir(parents=True)
+                (scenario_path / "preparation_handoff.h5").touch()
+            pre = FakeHandoff("pre_dam")
+            post = FakeHandoff("post_dam")
+            initial_heads = np.ones((1, 1, 1))
+            completed_heads = initial_heads + 1.0
+            summary_rows = [{"phase": "pre_dam", "event": "initial", "time_days": 0.0}]
+            written: dict[str, list[dict]] = {}
+
+            with patch("build_bdam_simulation.load_handoff", side_effect=[pre, post]):
+                with patch("build_bdam_simulation._default_heads", return_value=initial_heads):
+                    with patch("build_bdam_simulation._staged_spinup_schedule") as staged:
+                        with patch("build_bdam_simulation._run_year", return_value=(
+                                completed_heads, np.asarray([2.0]), np.asarray([0.15]))) as run_year:
+                            with patch("build_bdam_simulation._period_rows", return_value=summary_rows):
+                                with patch("build_bdam_simulation._write_summary",
+                                           side_effect=lambda path, rows: written.__setitem__(path.name, rows)):
+                                    run_from_handoff(model_input, staging_root=root / "staging")
+
+            staged.assert_not_called()
+            self.assertEqual(run_year.call_count, 1)
+            self.assertEqual(run_year.call_args.kwargs["phase"], "pre_dam")
+            self.assertEqual(written["spinup_summary.csv"], [])
+            self.assertEqual(written["weekly_summary.csv"], summary_rows)
 
     def test_packaged_terrain_defaults_remain_synchronized(self) -> None:
         package = Path(__file__).resolve().parent
