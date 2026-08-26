@@ -451,10 +451,10 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
         function prepareScope(app)
             scope = app.currentScope();
             frameCount = height(scope.Frames);
-            app.Controls.Frame.Limits = [1 max(2,frameCount)];
-            app.Controls.Frame.Value = min(app.CurrentFrame,frameCount);
-            app.Controls.Frame.MajorTicks = [];
             app.CurrentFrame = min(app.CurrentFrame,frameCount);
+            app.Controls.Frame.Limits = [0 max(1,frameCount-1)];
+            app.Controls.Frame.Value = app.CurrentFrame-1;
+            app.Controls.Frame.MajorTicks = [];
             app.ensureMapLimits(app.CurrentScopeKey);
             app.plotTimeSeries();
             app.rebuildMap();
@@ -612,7 +612,13 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
             end
             cleanup = onCleanup(@()app.deleteIfValid(progress));
             wseMin = Inf; wseMax = -Inf; depthMin = Inf; depthMax = -Inf;
-            for frameIndex = 1:height(scope.Frames)
+            frameIndices = 1:height(scope.Frames);
+            if app.Results.HasSpinup && any(string(scopeKey) == ["Spinup","All"]) && ...
+                    numel(frameIndices) > 1
+                frameIndices = frameIndices(2:end);
+            end
+            for scanIndex = 1:numel(frameIndices)
+                frameIndex = frameIndices(scanIndex);
                 frame = scope.Frames(frameIndex,:);
                 surface = app.getWaterSurface(frame);
                 depth = app.Results.ZTop-surface;
@@ -627,8 +633,8 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
                     depthMax = max(depthMax,max(validDepth));
                 end
                 if ~isempty(progress)
-                    progress.Value = frameIndex/height(scope.Frames);
-                    if mod(frameIndex,5) == 0
+                    progress.Value = scanIndex/numel(frameIndices);
+                    if mod(scanIndex,5) == 0
                         drawnow limitrate
                     end
                 end
@@ -660,7 +666,7 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
                 return
             end
             app.stopAnimation(false);
-            app.setFrame(round(value));
+            app.setFrame(round(value)+1);
         end
 
         function stepFrame(app,increment)
@@ -673,7 +679,7 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
             scope = app.currentScope();
             frameIndex = max(1,min(height(scope.Frames),round(frameIndex)));
             app.CurrentFrame = frameIndex;
-            app.Controls.Frame.Value = frameIndex;
+            app.Controls.Frame.Value = frameIndex-1;
             app.updateMapFrame();
             if ~isempty(app.CurrentTimeLine) && isvalid(app.CurrentTimeLine)
                 app.CurrentTimeLine.Value = scope.Frames.TimeDays(frameIndex);
@@ -761,7 +767,7 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
             app.MapTitle = title(axesHandle,sprintf("%s, year %d | day %.6g", ...
                 phaseLabel,frame.PhaseYear,frame.TimeDays),"Interpreter","none");
             app.Controls.Time.Text = sprintf("Frame %d/%d | day %.6g", ...
-                app.CurrentFrame,height(scope.Frames),frame.TimeDays);
+                app.CurrentFrame-1,height(scope.Frames)-1,frame.TimeDays);
             hold(axesHandle,"off");
             drawnow limitrate
         end
@@ -802,7 +808,7 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
             app.MapTitle.String = sprintf("%s, year %d | day %.6g", ...
                 phaseLabel,frame.PhaseYear,frame.TimeDays);
             app.Controls.Time.Text = sprintf("Frame %d/%d | day %.6g", ...
-                app.CurrentFrame,height(scope.Frames),frame.TimeDays);
+                app.CurrentFrame-1,height(scope.Frames)-1,frame.TimeDays);
         end
 
         function plotMonitoringPoints(app)

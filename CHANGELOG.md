@@ -24,6 +24,8 @@ All notable changes to BDam will be documented in this file.
 - The results loader and viewer now accept intentionally absent spinup outputs
   when all staged-spinup counts are zero; monitored and all timelines begin at
   day zero without exposing an invalid Spinup scope.
+- Animation frame positions are zero-based, and Spinup/All map color limits
+  ignore the first spinup frame so the initial state does not mask later change.
 
 ## [0.1.0] - 2026-08-24
 

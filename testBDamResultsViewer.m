@@ -133,6 +133,16 @@ end
 testCase.assertNotEmpty(scopeDropdown);
 testCase.verifyEqual(string(scopeDropdown.Value),"Monitored");
 testCase.verifyFalse(any(string(scopeDropdown.ItemsData) == "Spinup"));
+slider = findall(app.UIFigure,"Type","uislider");
+testCase.verifyEqual(slider.Limits,[0 1]);
+testCase.verifyEqual(slider.Value,0);
+slider.Value = 1;
+feval(slider.ValueChangedFcn,slider,[]);
+slider.Value = 0;
+feval(slider.ValueChangedFcn,slider,[]);
+labels = findall(app.UIFigure,"Type","uilabel");
+testCase.verifyTrue(any(arrayfun(@(label)contains(string(label.Text), ...
+    "Frame 0/1"),labels)));
 clear cleanup
 end
 
@@ -190,12 +200,12 @@ frame = results.Scopes.Monitored.Frames(2,:);
 surface = results.Readers{frame.ReaderIndex}.readWaterSurface(frame.LocalFrame);
 expectedDepth = results.ZTop-surface;
 slider = findall(app.UIFigure,"Type","uislider");
-slider.Value = 2;
+slider.Value = 1;
 feval(slider.ValueChangedFcn,slider,[]);
 testCase.verifyEqual(imageHandle.CData,expectedDepth,"AbsTol",1.0e-12);
 testCase.verifyEqual(contourHandle.ZData,surface,"AbsTol",1.0e-12);
 
-slider.Value = 3;
+slider.Value = 2;
 feval(slider.ValueChangedFcn,slider,[]);
 testCase.verifyEqual(findall(app.MapAxes,"Type","image"),imageHandle);
 testCase.verifyEqual(findall(app.MapAxes,"Type","contour"),contourHandle);
