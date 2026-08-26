@@ -80,21 +80,29 @@ chmod +x ../bin/mf6
 ../bin/mf6 -v
 ```
 
-## Initial setup
+## Install Python dependencies once
 
-From the local `BDam` directory:
+Install all required packages once for the `python3` interpreter that will run
+BDam. This user-level installation is reused by every model run and avoids a
+thousands-of-files `.venv` inside every extracted package. BDam does not depend
+on any particular Python distributor or operating-system package manager.
+
+From any local `BDam` directory:
 
 ```zsh
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+python3 --version
+python3 -m pip install --user -r requirements.txt
 ```
+
+If the selected Python provider manages packages through its own persistent
+environment, install the same `requirements.txt` there once and consistently
+use that environment's `python3`. Do not create an environment in each run.
 
 Run the fast Python checks. These tests do not launch MODFLOW:
 
 ```zsh
 mkdir -p ../matplotlib-cache
-MPLCONFIGDIR=../matplotlib-cache .venv/bin/python -m unittest -v test_bdam_workflow.py
+MPLCONFIGDIR=../matplotlib-cache python3 -m unittest -v test_bdam_workflow.py
 ```
 
 ## Configure the simulation
@@ -189,7 +197,7 @@ Run these commands in order from the local package directory:
 ```zsh
 matlab -batch "run('MakeGrid.m')"
 matlab -batch "run('MakeInputs.m')"
-.venv/bin/python build_bdam_simulation.py ModelInput
+python3 build_bdam_simulation.py ModelInput
 ```
 
 For unattended or agent-operated runs, use the safer logged form below for
@@ -201,7 +209,7 @@ the model command's failure status through `tee`:
 mkdir -p ../matplotlib-cache ../staging
 set -o pipefail
 MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
-  .venv/bin/python build_bdam_simulation.py ModelInput \
+  python3 build_bdam_simulation.py ModelInput \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
 
@@ -219,7 +227,7 @@ copied into `Runs/<phase>/year_##`, and validated again before being exposed as
 a completed annual workspace. To select a different **local** scratch disk:
 
 ```zsh
-.venv/bin/python build_bdam_simulation.py ModelInput --staging-root /local/scratch/bdam
+python3 build_bdam_simulation.py ModelInput --staging-root /local/scratch/bdam
 ```
 
 Successful staging directories are removed. If execution or publication
@@ -350,7 +358,6 @@ The following directories and files are generated and are not part of the
 source package:
 
 ```text
-.venv/
 Geometry/
 ModelInput/
 Runs/
@@ -359,8 +366,9 @@ __pycache__/
 ```
 
 To start another simulation from the standardized package, extract a fresh
-copy of the tarball into a new local folder. This avoids mixing environments,
-handoffs, or outputs between simulations.
+copy of the tarball into a new local folder and reuse the already-configured
+`python3`. This avoids mixing handoffs or outputs between simulations without
+duplicating installed Python packages in every run.
 
 ## Data provenance, citation, and license
 

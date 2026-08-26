@@ -127,7 +127,7 @@ tar -xzf "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.1.0.tar.gz" \
 cd "$HOME/BDamRuns/bdam-run-mycase/BDam"
 ```
 
-### 2. Install MODFLOW and the Python environment
+### 2. Install MODFLOW and install Python packages once
 
 Place a local copy of MODFLOW at `../bin/mf6`, then verify it.
 
@@ -137,15 +137,18 @@ cp /path/to/mf6 ../bin/mf6
 chmod +x ../bin/mf6
 ../bin/mf6 -v
 
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+python3 --version
+python3 -m pip install --user -r requirements.txt
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  .venv/bin/python -m unittest -v test_bdam_workflow.py
+  python3 -m unittest -v test_bdam_workflow.py
 ```
 
-All fast tests must pass before a model run.
+Install the requirements once for the selected `python3` and reuse that
+interpreter for every BDam run. The Python installation may come from any
+provider. If it uses its own persistent package environment, install
+`requirements.txt` there once. Never create `.venv` inside an individual BDam
+run. All fast tests must pass before a model run.
 
 ### 3. Build geometry and model inputs
 
@@ -186,7 +189,7 @@ without authorization.
 mkdir -p ../staging
 set -o pipefail
 MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
-  .venv/bin/python build_bdam_simulation.py ModelInput \
+  python3 build_bdam_simulation.py ModelInput \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
 

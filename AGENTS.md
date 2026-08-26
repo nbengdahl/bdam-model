@@ -12,21 +12,26 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
    Keep source packages and model runs separate. If the user directs a
    different run folder, use it provided it is local, non-synchronized, and
    has enough free space.
-4. Use the packaged default settings unless the user explicitly requests a
+4. Install every package in `requirements.txt` once for the selected
+   `python3` interpreter and reuse that interpreter for every BDam run. Never
+   create `.venv` or install Python packages inside an individual run
+   directory. The Python installation may come from any provider; do not
+   assume or require a particular package manager.
+5. Use the packaged default settings unless the user explicitly requests a
    configuration change.
-5. Run the three build/run commands in the documented order. Do not skip a
+6. Run the three build/run commands in the documented order. Do not skip a
    step and do not hand-edit `Geometry`, `ModelInput`, or `Runs`.
-6. Never add MODFLOW time steps or change the daily/weekly calendar to address
+7. Never add MODFLOW time steps or change the daily/weekly calendar to address
    convergence or output problems.
-7. Before starting MODFLOW, check for an existing `build_bdam_simulation.py`
+8. Before starting MODFLOW, check for an existing `build_bdam_simulation.py`
    or `mf6` process. If another model run is active, stop and ask the user
    whether it should remain active. Do not start a duplicate run.
-8. A quiet terminal does not mean the run is stuck. The runner captures MF6
+9. A quiet terminal does not mean the run is stuck. The runner captures MF6
    stdout. Check the active `bdam.lst`, file growth, and process activity.
-9. Do not restart a progressing run merely because it is quiet.
-10. Do not declare success from the MF6 termination line alone. Apply every
+10. Do not restart a progressing run merely because it is quiet.
+11. Do not declare success from the MF6 termination line alone. Apply every
     completion check below.
-11. Work through routine environment restrictions without changing the model.
+12. Work through routine environment restrictions without changing the model.
     Stop only when correctness is uncertain, a required dependency is truly
     unavailable, validation fails, or proceeding would require a model change.
 
@@ -75,21 +80,29 @@ chmod +x ../bin/mf6
 
 Expected validated version: `6.7.0 02/05/2026`. Report a different version.
 
-### 3. Create the Python environment and run fast tests
+### 3. Install the Python packages and run fast tests
+
+Install the requirements once for the user's selected Python 3.12-or-newer
+interpreter. This is a machine setup step, not a per-run step. The `--user`
+location is shared by all runs made with that interpreter and does not require
+administrator access. If the requirements are already installed, pip verifies
+them without creating duplicates. Never create a `.venv` in the run tree.
 
 ```zsh
 python3 --version
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+python3 -m pip install --user -r requirements.txt
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  .venv/bin/python -m unittest -v test_bdam_workflow.py
+  python3 -m unittest -v test_bdam_workflow.py
 ```
 
 All tests must pass. If dependency installation fails because network access
 is blocked, request network permission and retry the same install command.
-Do not change package versions.
+Do not change package versions or substitute a different interpreter between
+setup and execution. If the selected Python provider manages packages through
+its own environment mechanism, install `requirements.txt` once into that
+persistent environment and continue using its `python3`; do not create an
+environment inside each BDam run.
 
 ### 4. Check for duplicate runs
 
@@ -147,7 +160,7 @@ staging directory, and `pipefail` so logging cannot hide a failed exit code.
 mkdir -p ../staging
 set -o pipefail
 MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
-  .venv/bin/python build_bdam_simulation.py ModelInput \
+  python3 build_bdam_simulation.py ModelInput \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
 
