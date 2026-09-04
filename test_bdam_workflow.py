@@ -17,20 +17,79 @@ os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "bdam-ma
 
 from build_bdam_simulation import (  # noqa: E402
     MONITORING_OUTPUTS,
+    SOLVER_INNER_OUTPUT,
+    SOLVER_OUTER_OUTPUT,
+    SOLVER_STATS_OUTPUT,
     _create_staging_workspace,
     _duration_weighted_period_means,
     _execute_mf6,
     _next_backup_path,
+    _positive_integer,
     _prepare_runs_workspace,
     _publish_workspace,
+    _solver_settings,
     _validate_calendar,
     _validate_monitoring_outputs,
+    _write_solver_stats,
     _write_summary,
     run_from_handoff,
 )
 
 
 class BDamWorkflowTests(unittest.TestCase):
+    def test_solver_profiles_preserve_strict_tolerances(self) -> None:
+        balanced = _solver_settings("balanced")
+        balanced_initial = _solver_settings("balanced", robust_initialization=True)
+        conservative = _solver_settings("conservative", save_inner_iterations=True)
+        self.assertEqual(balanced["complexity"], "MODERATE")
+        self.assertEqual(conservative["complexity"], "COMPLEX")
+        for settings in (balanced, conservative):
+            self.assertEqual(settings["outer_dvclose"], 1.0e-5)
+            self.assertEqual(settings["inner_dvclose"], 1.0e-6)
+            self.assertEqual(settings["rcloserecord"], "1e-6 strict")
+            self.assertEqual(settings["linear_acceleration"], "BICGSTAB")
+            self.assertEqual(settings["csv_outer_output_filerecord"], SOLVER_OUTER_OUTPUT)
+        self.assertNotIn("csv_inner_output_filerecord", balanced)
+        self.assertEqual(conservative["csv_inner_output_filerecord"], SOLVER_INNER_OUTPUT)
+        self.assertEqual(balanced_initial["complexity"], "COMPLEX")
+        with self.assertRaises(ValueError):
+            _solver_settings("unknown")
+
+    def test_uzf_wave_capacities_are_positive_integers(self) -> None:
+        self.assertEqual(_positive_integer(7.0, "uzf_ntrailwaves"), 7)
+        self.assertEqual(_positive_integer(20.0, "uzf_nwavesets"), 20)
+        for invalid in (0.0, -1.0, 20.5, np.nan):
+            with self.assertRaises(ValueError):
+                _positive_integer(invalid, "uzf_nwavesets")
+
+    def test_solver_statistics_capture_iterations_memory_and_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / "mfsim.lst").write_text(
+                "MODFLOW 6\nVERSION 6.7.0 02/05/2026\n"
+                "MEMORY MANAGER TOTAL STORAGE BY DATA TYPE, IN MEGABYTES\n"
+                " Total            289.30164     \n"
+                "Normal termination of simulation.\n"
+            )
+            with (workspace / SOLVER_OUTER_OUTPUT).open("w", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=[
+                    "total_inner_iterations", "kper", "kstp", "nouter"])
+                writer.writeheader()
+                writer.writerow({"total_inner_iterations": 4, "kper": 1, "kstp": 1, "nouter": 1})
+                writer.writerow({"total_inner_iterations": 7, "kper": 1, "kstp": 1, "nouter": 2})
+                writer.writerow({"total_inner_iterations": 9, "kper": 2, "kstp": 1, "nouter": 1})
+            _write_solver_stats(workspace, "balanced", 7, 20, 12.5, False, True)
+            stats = __import__("json").loads((workspace / SOLVER_STATS_OUTPUT).read_text())
+            self.assertEqual(stats["solver_profile"], "balanced")
+            self.assertEqual(stats["ims_complexity"], "COMPLEX")
+            self.assertEqual(stats["solver_variant"], "robust_initialization")
+            self.assertEqual(stats["mf6_version"], "6.7.0")
+            self.assertEqual(stats["time_step_count"], 2)
+            self.assertEqual(stats["total_outer_iterations"], 3)
+            self.assertEqual(stats["total_inner_iterations"], 9)
+            self.assertEqual(stats["maximum_outer_iterations_per_time_step"], 2)
+            self.assertGreater(stats["reported_memory_allocation_bytes"], 289 * 1024 ** 2)
+
     def test_daily_and_weekly_calendars_have_one_step_per_period(self) -> None:
         _validate_calendar(np.ones(365), np.ones(365, int), "daily")
         _validate_calendar(np.full(52, 365.0 / 52.0), np.ones(52, int), "weekly")
@@ -108,6 +167,16 @@ class BDamWorkflowTests(unittest.TestCase):
             with patch("build_bdam_simulation._mf6_executable", return_value=Path("/fake/mf6")):
                 with patch("build_bdam_simulation.subprocess.run", return_value=completed):
                     with self.assertRaises(RuntimeError):
+                        _execute_mf6(workspace)
+
+    def test_uzf_wave_capacity_failure_has_actionable_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            completed = CompletedProcess(
+                ["mf6"], 1, "ERROR: UZF variable NWAVESETS needs to be increased.")
+            with patch("build_bdam_simulation._mf6_executable", return_value=Path("/fake/mf6")):
+                with patch("build_bdam_simulation.subprocess.run", return_value=completed):
+                    with self.assertRaisesRegex(RuntimeError, "from 20 to 40"):
                         _execute_mf6(workspace)
 
     def test_failed_publication_retains_staging_and_hides_final_workspace(self) -> None:
@@ -198,11 +267,15 @@ class BDamWorkflowTests(unittest.TestCase):
                             with patch("build_bdam_simulation._period_rows", return_value=summary_rows):
                                 with patch("build_bdam_simulation._write_summary",
                                            side_effect=lambda path, rows: written.__setitem__(path.name, rows)):
-                                    run_from_handoff(model_input, staging_root=root / "staging")
+                                    run_from_handoff(model_input, staging_root=root / "staging",
+                                                     solver_profile="conservative",
+                                                     save_inner_iterations=True)
 
             staged.assert_not_called()
             self.assertEqual(run_year.call_count, 1)
             self.assertEqual(run_year.call_args.kwargs["phase"], "pre_dam")
+            self.assertEqual(run_year.call_args.kwargs["solver_profile"], "conservative")
+            self.assertTrue(run_year.call_args.kwargs["save_inner_iterations"])
             self.assertEqual(written["spinup_summary.csv"], [])
             self.assertEqual(written["weekly_summary.csv"], summary_rows)
 

@@ -6,6 +6,9 @@ All notable changes to BDam will be documented in this file.
 
 ### Added
 
+- Balanced and conservative IMS solver profiles, compact outer-iteration
+  diagnostics, optional detailed inner-iteration output, and per-workspace
+  `bdam.solver_stats.json` provenance.
 - A MATLAB results viewer for completed runs, including indexed MF6 head-file
   reading, spinup/monitored/all timeline scopes, dual-unit monitoring plots,
   assignable groundwater depth/elevation rasters and contours, automatic
@@ -15,6 +18,16 @@ All notable changes to BDam will be documented in this file.
 
 ### Changed
 
+- The default balanced solver uses `COMPLEX` for the first solve from
+  analytical initial conditions and `MODERATE` for restarted workspaces, with
+  the existing strict convergence tolerances throughout;
+  `--solver-profile conservative` uses `COMPLEX` for every solve.
+- Default UZF `NWAVESETS` is reduced from 1000 to 20. Both UZF wave-capacity
+  inputs must be positive integers, and MF6 capacity failures now recommend
+  regenerating inputs with 40 wave sets.
+- Representative pre-/post-dam benchmarks improved from 129.1/134.5 seconds
+  and roughly 11 GB allocated to 71.7/68.7 seconds and 286--289 MB allocated,
+  while retaining strict convergence tolerances.
 - Python requirements are now installed once for the user's selected
   persistent `python3` and reused across runs. The documented workflow no
   longer creates a separate virtual environment inside every run directory.

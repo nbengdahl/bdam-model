@@ -166,6 +166,16 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 
 Do not run this command a second time while the first process is active.
 
+The default `balanced` solver profile uses COMPLEX IMS settings for the first
+solve from analytical initial conditions and faster MODERATE settings for
+restarted workspaces, with the same strict closure tolerances throughout. If
+and only if a restarted solve reports solver convergence failure, rerun the
+unchanged handoffs with `--solver-profile conservative`. If MF6
+specifically reports that UZF `NWAVESETS` must be increased, change
+`mf6_parameters.uzf_nwavesets` from 20 to 40 in `MakeInputs.m`, regenerate the
+paired handoffs, and rerun. Never increase wave sets automatically or alter
+the calendar. Use `--solver-inner-output` only for detailed solver diagnosis.
+
 FloPy may print a line resembling the following during each phase setup:
 
 ```text
@@ -241,6 +251,8 @@ For every completed workspace, verify all of the following:
 - The runner accepted the configured final saved time (1095 days for the
   default staged spinup and 365 days for each monitored annual workspace).
 - `bdam.water_balance.json` exists and contains `"status": "pass"`.
+- `bdam.solver_stats.json` exists and reports normal termination, the selected
+  profile, UZF wave capacity, solve time, iteration totals, and MF6 version.
 - Raw point-observation CSVs and `bdam.fluxes.csv` are present in every
   spinup, pre-dam, and post-dam year.
 - `Runs/spinup_summary.csv` and `Runs/weekly_summary.csv` exist for the default
@@ -283,6 +295,8 @@ Use this order. Do not jump directly to changing source code or model inputs.
 | Active staging directory temporarily lacks `bdam.lst` | Treat it as a possible annual transition and repeat the guarded check shortly. |
 | `Runs` is empty while MF6 is active and staging files grow | Continue monitoring; publication happens only after annual validation. |
 | Required test fails, MATLAB reports a script/model assertion, MF6 exits nonzero, a required output is unreadable, final time is not 365 days, or water balance does not pass | Stop. Preserve the diagnostic staging workspace and report exact evidence. Do not alter physics, calendar, solver rules, or validation. |
+| Balanced IMS profile reports convergence failure | Rerun the unchanged handoffs once with `--solver-profile conservative`. |
+| MF6 reports that UZF `NWAVESETS` must be increased | Change the user-defined value from 20 to 40, regenerate both handoffs with `MakeInputs.m`, and rerun. Increase further only if MF6 repeats the same error. |
 
 ## Reproducibility comparisons
 

@@ -198,6 +198,26 @@ one weekly spinup year, one monitored pre-dam year, and one monitored post-dam
 year. A quiet terminal is normal because MF6 output is captured. Live progress
 is written to `bdam.lst` in the active directory under `../staging`.
 
+The default `balanced` solver profile uses the robust MF6 `COMPLEX` preset for
+the first solve from analytical initial conditions and the faster `MODERATE`
+preset for restarted workspaces, always with the same strict convergence
+tolerances. If a restarted solve reports a convergence failure, rerun the
+unchanged inputs with:
+
+```zsh
+python3 build_bdam_simulation.py ModelInput \
+  --staging-root ../staging --solver-profile conservative
+```
+
+The conservative profile uses `COMPLEX` for every solve without changing
+model inputs, the calendar, or closure tolerances. Add
+`--solver-inner-output` only when detailed inner-iteration diagnostics are
+needed.
+
+On the packaged benchmark, the 20-wave balanced production solves took about
+68--72 seconds instead of 129--135 seconds and reduced MF6's reported
+allocation from roughly 11 GB to 286--289 MB. Runtime varies by computer.
+
 ### 6. Confirm completion
 
 A successful default run contains:
@@ -212,7 +232,8 @@ Runs/weekly_summary.csv
 
 Each completed workspace must have normal termination, nonempty groundwater,
 LAK, and UZF binary outputs, the configured final saved time, and
-`bdam.water_balance.json` with `"status": "pass"`. The runner enforces these
+`bdam.water_balance.json` with `"status": "pass"`, and
+`bdam.solver_stats.json` with normal termination. The runner enforces these
 requirements before publishing a workspace.
 
 ## Graphical terrain application
@@ -422,7 +443,7 @@ The factors are normalized internally to a mean of one, then multiplied by
 | `uzf_extdp_m` | 1.0 | m | ET extinction depth |
 | `uzf_extwc` | 0.10 | water fraction | ET extinction water content; not below residual content |
 | `uzf_ntrailwaves` | 7 | count | UZF trailing-wave numerical capacity |
-| `uzf_nwavesets` | 1000 | count | UZF wave-set numerical capacity |
+| `uzf_nwavesets` | 20 | count | UZF wave-set numerical capacity; increase to 40 if MF6 reports insufficient capacity |
 | `external_weir_invert_depth_m` | 0.05 | m | External LAK outlet invert below time-zero downstream stage |
 | `initial_head_channel_offset_m` | 0.25 | m | Initial groundwater head above nearest channel bed |
 | `initial_head_lateral_gradient_m_per_m` | 0.02 | m/m | Initial water-table rise away from the channel |
@@ -435,6 +456,13 @@ The factors are normalized internally to a mean of one, then multiplied by
 All year counts are nonnegative integers, and at least one monitored pre- or
 post-dam year is required. Do not add hidden spinup or extra MODFLOW time steps
 to resolve convergence problems.
+
+`uzf_ntrailwaves` and `uzf_nwavesets` must be positive integers. They control
+UZF numerical capacity rather than soil physics. If MF6 specifically reports
+that `NWAVESETS` must be increased, change the value from 20 to 40 in
+`MakeInputs.m`, regenerate the paired handoffs, and rerun. Increase it further
+only if the same MF6 error recurs. The workflow does not change this value
+automatically.
 
 ### BDA treatment constants
 
@@ -619,6 +647,8 @@ where a value came from. It should trace from the source parameter forward.
 | `Runs/weekly_summary.csv` or `daily_summary.csv` | How heads, lake stages, storage, and fluxes change before and after the BDA |
 | `Runs/spinup_summary.csv` | Whether the staged initial-condition sequence is stabilizing |
 | `bdam.water_balance.json` | Whether numerical and coupled-system water-balance checks pass |
+| `bdam.solver_stats.json` | Solver profile, wave capacity, solve time, iteration totals, MF6 version, and reported memory allocation |
+| `bdam.solver.outer.csv` | Compact outer-iteration convergence history |
 | `bdam.heads.csv` | Groundwater heads at named monitoring locations |
 | `bdam.lake_fluxes.csv` | LAK stage, storage, outlets, and native lake observations |
 | `bdam.ghb_flux.csv` | Total exchange at the downstream groundwater boundary |

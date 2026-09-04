@@ -170,6 +170,7 @@ mf6_parameters.pre_dam_years = 1;
 mf6_parameters.post_dam_years = 1;
 mf6_parameters.initial_head_channel_offset_m = 0.25;
 mf6_parameters.initial_head_lateral_gradient_m_per_m = 0.02;
+mf6_parameters.uzf_nwavesets = 20;
 ```
 
 Spinup always uses the pre-dam condition. Its three year counts are independent
@@ -249,6 +250,39 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
   python3 build_bdam_simulation.py ModelInput \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
+
+The default `balanced` solver profile uses the robust `COMPLEX` IMS preset for
+the first solve from analytical initial conditions, then the faster `MODERATE`
+preset for restarted workspaces. The strict head and flow closure tolerances
+remain unchanged. If a restarted solve reports a solver convergence failure,
+rerun the unchanged inputs with the conservative profile:
+
+```zsh
+python3 build_bdam_simulation.py ModelInput \
+  --staging-root ../staging --solver-profile conservative
+```
+
+Detailed inner-iteration diagnostics are normally unnecessary. Add
+`--solver-inner-output` only when diagnosing solver behavior. Every completed
+workspace includes compact outer-iteration output and
+`bdam.solver_stats.json`, which records the selected profile, UZF wave
+capacity, solve time, iteration totals, MF6 version, and reported allocation.
+
+The default UZF `NWAVESETS` value of 20 is numerical storage capacity, not a
+physical or calibration parameter. If MF6 specifically reports that
+`NWAVESETS` must be increased, change `mf6_parameters.uzf_nwavesets` in
+`MakeInputs.m` to 40, regenerate both handoffs, and rerun. Increase it further
+only if MF6 repeats that specific error; the runner never changes it or the
+calendar automatically.
+
+Representative pre-/post-dam benchmarks reduced MF6 solve time from
+129.1/134.5 seconds with `COMPLEX` and 1000 wave sets to 71.7/68.7 seconds
+with `MODERATE` and 20 wave sets. Reported allocation fell from roughly 11 GB
+to 286--289 MB. Maximum benchmark head differences were 3 micrometres
+pre-dam and 0.668 mm post-dam; lake-stage differences were below
+1.4e-8 m and key-flux differences were below 0.006%. These measurements are
+representative rather than performance guarantees for other hardware or
+inputs.
 
 The steps produce:
 
@@ -373,7 +407,8 @@ workspace must have:
 - nonempty, readable GWF heads/budget, LAK stage/budget, and UZF
   water-content/budget files;
 - a final saved time of 365 days; and
-- `bdam.water_balance.json` with status `pass`.
+- `bdam.water_balance.json` with status `pass`; and
+- `bdam.solver_stats.json` with normal termination and numerical provenance.
 
 The runner enforces these checks before a year can initialize the next phase.
 A normal-termination line alone is not accepted as proof of a valid run.

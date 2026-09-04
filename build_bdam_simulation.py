@@ -11,9 +11,11 @@ import argparse
 import csv
 import datetime as dt
 import json
+import re
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +34,13 @@ MONITORING_OUTPUTS = (
     "bdam.heads.csv", "bdam.lake_fluxes.csv", "bdam.ghb_flux.csv",
 )
 FLUX_OUTPUT = "bdam.fluxes.csv"
+SOLVER_OUTER_OUTPUT = "bdam.solver.outer.csv"
+SOLVER_INNER_OUTPUT = "bdam.solver.inner.csv"
+SOLVER_STATS_OUTPUT = "bdam.solver_stats.json"
+SOLVER_PROFILES = {
+    "balanced": "MODERATE",
+    "conservative": "COMPLEX",
+}
 
 
 @dataclass
@@ -71,6 +80,41 @@ class SpinupStep:
     stage: str
     stage_year: int
     stage_time_days: float
+
+
+def _solver_settings(profile: str, save_inner_iterations: bool = False,
+                     robust_initialization: bool = False) -> dict:
+    """Return the explicit, reproducible IMS settings for a solver profile."""
+    try:
+        complexity = SOLVER_PROFILES[profile]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported solver profile {profile!r}; choose from {sorted(SOLVER_PROFILES)}."
+        ) from exc
+    settings = {
+        "complexity": complexity,
+        "outer_dvclose": 1.0e-5,
+        "inner_dvclose": 1.0e-6,
+        "rcloserecord": "1e-6 strict",
+        "linear_acceleration": "BICGSTAB",
+        "csv_outer_output_filerecord": SOLVER_OUTER_OUTPUT,
+    }
+    if profile == "balanced" and robust_initialization:
+        # The first solve starts from an analytical state and may include a
+        # long mean-forcing spinup step. The packaged default requires the
+        # robust COMPLEX preset there. Restarted annual solves use the faster
+        # MODERATE preset; no physical input or closure tolerance changes.
+        settings["complexity"] = "COMPLEX"
+    if save_inner_iterations:
+        settings["csv_inner_output_filerecord"] = SOLVER_INNER_OUTPUT
+    return settings
+
+
+def _positive_integer(value: float, name: str) -> int:
+    """Validate numerical-capacity inputs read from the numeric HDF5 schema."""
+    if not np.isfinite(value) or value <= 0 or value != int(value):
+        raise ValueError(f"{name} must be a positive integer; received {value!r}.")
+    return int(value)
 
 
 def _validate_calendar(perlen: np.ndarray, nstp: np.ndarray, resolution: str) -> None:
@@ -565,7 +609,9 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
                        initial_heads: np.ndarray | None = None, initial_lake_stages: np.ndarray | None = None,
                        initial_uzf_wc: np.ndarray | None = None,
                        runtime_schedule: RuntimeSchedule | None = None,
-                       save_monitoring: bool = True) -> flopy.mf6.MFSimulation:
+                       save_monitoring: bool = True, solver_profile: str = "balanced",
+                       save_inner_iterations: bool = False,
+                       robust_initialization: bool = False) -> flopy.mf6.MFSimulation:
     h = load_handoff(Path(h5_path)); _required(h)
     scenario = scenario or h.manifest["scenario"]
     if scenario != h.manifest["scenario"]:
@@ -610,8 +656,8 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
     # preserving annual endpoints and flux integration.
     sim.simulation_data.float_precision = 18
     flopy.mf6.ModflowTdis(sim, time_units="DAYS", nper=len(perlen), perioddata=list(zip(perlen, nstp, [1.0] * len(perlen))))
-    flopy.mf6.ModflowIms(sim, complexity="COMPLEX", outer_dvclose=1e-5, inner_dvclose=1e-6,
-                          rcloserecord="1e-6 strict", linear_acceleration="BICGSTAB")
+    flopy.mf6.ModflowIms(sim, **_solver_settings(
+        solver_profile, save_inner_iterations, robust_initialization))
     gwf = flopy.mf6.ModflowGwf(sim, modelname="bdam", save_flows=True, newtonoptions="NEWTON UNDER_RELAXATION")
     flopy.mf6.ModflowGwfdis(gwf, length_units="METERS", nlay=nlay, nrow=nrow, ncol=ncol,
                              delr=float(h.scalar("/grid/dx_m")), delc=float(h.scalar("/grid/dy_m")), top=top, botm=botm)
@@ -688,10 +734,13 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
                            continuous={"bdam.ghb_flux.csv": [("ghb_total", "ghb", "downstream_ghb")]})
 
     uzf_pd, uzf_period, atmosphere_qa = _uzf_records(h, nlay, nrow, ncol, k33, land_mask, lake_mask, initial_uzf_wc)
+    ntrailwaves = _positive_integer(
+        h.scalar("/mf6_parameters/uzf_ntrailwaves"), "uzf_ntrailwaves")
+    nwavesets = _positive_integer(
+        h.scalar("/mf6_parameters/uzf_nwavesets"), "uzf_nwavesets")
     uzf = flopy.mf6.ModflowGwfuzf(gwf, pname="UZF_LAND", nuzfcells=len(uzf_pd), packagedata=uzf_pd,
                                   perioddata={0: uzf_period}, simulate_et=True, unsat_etwc=True, save_flows=True,
-                                  ntrailwaves=int(h.scalar("/mf6_parameters/uzf_ntrailwaves")),
-                                  nwavesets=int(h.scalar("/mf6_parameters/uzf_nwavesets")),
+                                  ntrailwaves=ntrailwaves, nwavesets=nwavesets,
                                   wc_filerecord="bdam.uzf.wc", budget_filerecord="bdam.uzf.bud")
     _ts(uzf, "bdam.uzf.ts", ["uzf_finf", "uzf_pet"], time,
         [forcing["land_recharge_m_per_day"], forcing["land_et_m_per_day"]])
@@ -706,23 +755,99 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
     return sim
 
 
-def _execute_mf6(workspace: Path) -> None:
+def _execute_mf6(workspace: Path, solver_profile: str = "balanced") -> float:
     """Run one blocking MF6 process and require its explicit success markers."""
     workspace = Path(workspace)
+    started = time.perf_counter()
     completed = subprocess.run(
         [str(_mf6_executable())], cwd=workspace, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
     )
+    elapsed_seconds = time.perf_counter() - started
     listing = workspace / "mfsim.lst"
     listing_text = listing.read_text(errors="replace") if listing.is_file() else ""
     if completed.returncode != 0 or "Normal termination of simulation." not in listing_text:
-        report = completed.stdout[-4000:]
+        stdout = completed.stdout or ""
+        model_listing = workspace / "bdam.lst"
+        model_listing_text = (model_listing.read_text(errors="replace")
+                              if model_listing.is_file() else "")
+        combined = f"{listing_text}\n{model_listing_text}\n{stdout}"
+        guidance = ""
+        if "NWAVESETS needs to be increased" in combined:
+            guidance = (
+                "\nMF6 exhausted the configured UZF wave capacity. Increase "
+                "mf6_parameters.uzf_nwavesets from 20 to 40 in MakeInputs.m, regenerate "
+                "the handoffs, and rerun. Increase it further only if MF6 repeats this error."
+            )
+        elif solver_profile == "balanced" and re.search(
+                r"convergence failure|failed to converge|did not converge", combined, re.IGNORECASE):
+            guidance = "\nRerun the unchanged model with --solver-profile conservative."
+        report = stdout[-4000:]
         raise RuntimeError(
-            f"MF6 did not terminate normally (exit code {completed.returncode}).\n{report}"
+            f"MF6 did not terminate normally (exit code {completed.returncode}).\n{report}{guidance}"
         )
+    return elapsed_seconds
 
 
-def _run(sim: flopy.mf6.MFSimulation) -> None:
+def _solver_memory_bytes(listing_text: str) -> int | None:
+    """Extract MF6's final reported allocation from the simulation listing."""
+    matches = list(re.finditer(
+        r"MEMORY MANAGER TOTAL STORAGE BY DATA TYPE, IN (MEGABYTES|GIGABYTES)"
+        r".*?^\s*Total\s+([0-9.Ee+-]+)\s*$",
+        listing_text, re.MULTILINE | re.DOTALL,
+    ))
+    if not matches:
+        return None
+    unit, value = matches[-1].groups()
+    scale = 1024 ** 2 if unit == "MEGABYTES" else 1024 ** 3
+    return int(float(value) * scale)
+
+
+def _write_solver_stats(workspace: Path, solver_profile: str, ntrailwaves: int,
+                        nwavesets: int, elapsed_seconds: float,
+                        save_inner_iterations: bool,
+                        robust_initialization: bool) -> None:
+    """Write compact solver provenance and iteration statistics."""
+    workspace = Path(workspace)
+    listing_text = (workspace / "mfsim.lst").read_text(errors="replace")
+    version_match = re.search(r"\bVERSION\s+([0-9]+(?:\.[0-9]+)+)", listing_text)
+    rows: list[dict[str, str]] = []
+    outer_path = workspace / SOLVER_OUTER_OUTPUT
+    if outer_path.is_file():
+        with outer_path.open(newline="") as stream:
+            rows = list(csv.DictReader(stream))
+    if not rows:
+        raise RuntimeError("MF6 did not produce required outer-iteration diagnostics.")
+    ims_settings = _solver_settings(
+        solver_profile, save_inner_iterations, robust_initialization)
+    stats = {
+        "status": "normal_termination",
+        "solver_profile": solver_profile,
+        "ims_complexity": ims_settings["complexity"],
+        "solver_variant": "robust_initialization" if robust_initialization else "standard",
+        "outer_dvclose": 1.0e-5,
+        "inner_dvclose": 1.0e-6,
+        "inner_rclose": 1.0e-6,
+        "rclose_option": "STRICT",
+        "linear_acceleration": "BICGSTAB",
+        "uzf_ntrailwaves": ntrailwaves,
+        "uzf_nwavesets": nwavesets,
+        "mf6_version": version_match.group(1) if version_match else None,
+        "solve_wall_time_seconds": elapsed_seconds,
+        "time_step_count": len({(row["kper"], row["kstp"]) for row in rows}),
+        "total_outer_iterations": len(rows),
+        "total_inner_iterations": int(rows[-1]["total_inner_iterations"]),
+        "maximum_outer_iterations_per_time_step": max(int(row["nouter"]) for row in rows),
+        "reported_memory_allocation_bytes": _solver_memory_bytes(listing_text),
+        "outer_iteration_file": SOLVER_OUTER_OUTPUT,
+        "inner_iteration_file": SOLVER_INNER_OUTPUT if save_inner_iterations else None,
+    }
+    (workspace / SOLVER_STATS_OUTPUT).write_text(json.dumps(stats, indent=2) + "\n")
+
+
+def _run(sim: flopy.mf6.MFSimulation, solver_profile: str, ntrailwaves: int,
+         nwavesets: int, save_inner_iterations: bool,
+         robust_initialization: bool) -> None:
     """Write, execute, and verify one complete MF6 simulation workspace.
 
     Run MF6 directly rather than through FloPy's stdout convenience wrapper.
@@ -732,7 +857,7 @@ def _run(sim: flopy.mf6.MFSimulation) -> None:
     sim.write_simulation(silent=True)
     workspace = Path(sim.sim_path)
     validate_lak_outlet_routes(workspace / "bdam.lak")
-    _execute_mf6(workspace)
+    elapsed_seconds = _execute_mf6(workspace, solver_profile)
     empty = [name for name in REQUIRED_BINARY_OUTPUTS
              if not (workspace / name).is_file() or (workspace / name).stat().st_size == 0]
     if empty:
@@ -745,6 +870,8 @@ def _run(sim: flopy.mf6.MFSimulation) -> None:
             f"MF6 output ends at {output_times[-1] if output_times else 'no saved time'} days; "
             f"expected {expected_final_time} days."
         )
+    _write_solver_stats(workspace, solver_profile, ntrailwaves, nwavesets,
+                        elapsed_seconds, save_inner_iterations, robust_initialization)
     _write_budget_qa(workspace)
 
 
@@ -1417,6 +1544,10 @@ def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_fi
     qa_path = workspace / "bdam.water_balance.json"
     if not qa_path.is_file() or json.loads(qa_path.read_text()).get("status") != "pass":
         raise RuntimeError("Workspace is missing passing water-budget QA.")
+    solver_stats_path = workspace / SOLVER_STATS_OUTPUT
+    if (not solver_stats_path.is_file() or
+            json.loads(solver_stats_path.read_text()).get("status") != "normal_termination"):
+        raise RuntimeError("Workspace is missing valid solver statistics.")
     _validate_monitoring_outputs(workspace, expected_final_time, save_monitoring)
     _validate_flux_output(workspace, expected_final_time)
 
@@ -1485,18 +1616,28 @@ def _prepare_runs_workspace(runs_workspace: Path) -> Path | None:
 def _run_year(h5_path: Path, handoff: Handoff, workspace: Path, heads: np.ndarray,
               stages: np.ndarray | None, wc: np.ndarray | None, save_monitoring: bool,
               staging_root: Path, phase: str, year: int,
-              runtime_schedule: RuntimeSchedule | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+              runtime_schedule: RuntimeSchedule | None = None, solver_profile: str = "balanced",
+              save_inner_iterations: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     resolution = handoff.manifest.get("time_resolution")
     if resolution not in {"weekly", "daily"}:
         raise ValueError("Handoff is missing a valid time_resolution metadata value.")
     staging_workspace = _create_staging_workspace(staging_root, phase, year)
     expected_final_time = float(np.sum(runtime_schedule.perlen_days if runtime_schedule is not None
                                        else handoff.array("/calendar/perlen_days").ravel()))
+    ntrailwaves = _positive_integer(
+        handoff.scalar("/mf6_parameters/uzf_ntrailwaves"), "uzf_ntrailwaves")
+    nwavesets = _positive_integer(
+        handoff.scalar("/mf6_parameters/uzf_nwavesets"), "uzf_nwavesets")
+    robust_initialization = wc is None
     try:
-        _run(build_from_handoff(h5_path, staging_workspace, resolution=resolution, initial_heads=heads,
-                                initial_lake_stages=stages, initial_uzf_wc=wc,
-                                runtime_schedule=runtime_schedule,
-                                save_monitoring=save_monitoring))
+        simulation = build_from_handoff(
+            h5_path, staging_workspace, resolution=resolution, initial_heads=heads,
+            initial_lake_stages=stages, initial_uzf_wc=wc,
+            runtime_schedule=runtime_schedule, save_monitoring=save_monitoring,
+            solver_profile=solver_profile, save_inner_iterations=save_inner_iterations,
+            robust_initialization=robust_initialization)
+        _run(simulation, solver_profile, ntrailwaves, nwavesets, save_inner_iterations,
+             robust_initialization)
         _write_flux_monitoring(handoff, staging_workspace)
         _validate_completed_workspace(handoff, staging_workspace, expected_final_time, save_monitoring)
         validator = lambda path: _validate_completed_workspace(
@@ -1525,8 +1666,11 @@ def _resolve_handoffs(path: str | Path) -> tuple[Path, Path, Path]:
     return root, pre, post
 
 
-def run_from_handoff(path: str | Path, staging_root: str | Path | None = None) -> None:
+def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
+                     solver_profile: str = "balanced",
+                     save_inner_iterations: bool = False) -> None:
     """Spin up pre-dam conditions, then run the configured pre-/post-dam years."""
+    _solver_settings(solver_profile, save_inner_iterations)
     model_input, pre_path, post_path = _resolve_handoffs(path)
     workspace = model_input.parent / "Runs"
     staging_root = (Path(staging_root) if staging_root is not None
@@ -1546,6 +1690,9 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None) -
     if backup is not None:
         print(f"Archived existing run outputs at {backup}.")
     print(f"Annual MF6 workspaces will be staged under {Path(staging_root).expanduser().resolve()}.")
+    profile_description = ("COMPLEX initialization, MODERATE restarts"
+                           if solver_profile == "balanced" else "COMPLEX for every solve")
+    print(f"IMS solver profile: {solver_profile} ({profile_description}).")
 
     heads = _default_heads(pre)
     stages = wc = None
@@ -1557,7 +1704,9 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None) -
         initial_heads, initial_stages = heads, stages
         heads, stages, wc = _run_year(pre_path, pre, spinup_ws, heads, stages, wc,
                                       save_monitoring=True, staging_root=Path(staging_root),
-                                      phase="spinup", year=1, runtime_schedule=schedule)
+                                      phase="spinup", year=1, runtime_schedule=schedule,
+                                      solver_profile=solver_profile,
+                                      save_inner_iterations=save_inner_iterations)
         spinup_rows.extend(_period_rows(pre, spinup_ws, initial_heads, initial_stages,
                                         metadata[0].phase, metadata[0].stage_year, 0.0,
                                         include_initial=True, runtime_schedule=schedule,
@@ -1575,7 +1724,8 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None) -
         initial_heads, initial_stages = heads, stages
         heads, stages, wc = _run_year(pre_path, pre, run_ws, heads, stages, wc,
                                       save_monitoring=True, staging_root=Path(staging_root),
-                                      phase="pre_dam", year=year)
+                                      phase="pre_dam", year=year, solver_profile=solver_profile,
+                                      save_inner_iterations=save_inner_iterations)
         rows.extend(_period_rows(pre, run_ws, initial_heads, initial_stages,
                                  "pre_dam", year, elapsed_days, include_initial))
         elapsed_days += float(np.sum(pre.array("/calendar/perlen_days").ravel()))
@@ -1593,7 +1743,8 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None) -
         initial_heads, initial_stages = heads, stages
         heads, stages, wc = _run_year(post_path, post, run_ws, heads, stages, wc,
                                       save_monitoring=True, staging_root=Path(staging_root),
-                                      phase="post_dam", year=year)
+                                      phase="post_dam", year=year, solver_profile=solver_profile,
+                                      save_inner_iterations=save_inner_iterations)
         rows.extend(_period_rows(post, run_ws, initial_heads, initial_stages,
                                  "post_dam", year, elapsed_days, include_initial=(year == 1)))
         elapsed_days += float(np.sum(post.array("/calendar/perlen_days").ravel()))
@@ -1606,8 +1757,14 @@ def main() -> None:
     parser.add_argument("handoff", type=Path, help="sole input: preparation_handoff.h5")
     parser.add_argument("--staging-root", type=Path, default=None,
                         help="local scratch directory for annual MF6 workspaces (default: system temporary directory)")
+    parser.add_argument("--solver-profile", choices=sorted(SOLVER_PROFILES), default="balanced",
+                        help="IMS tuning policy (default: balanced; use conservative if a restart fails)")
+    parser.add_argument("--solver-inner-output", action="store_true",
+                        help="also save detailed inner-iteration CSV diagnostics")
     args = parser.parse_args()
-    run_from_handoff(args.handoff, staging_root=args.staging_root)
+    run_from_handoff(args.handoff, staging_root=args.staging_root,
+                     solver_profile=args.solver_profile,
+                     save_inner_iterations=args.solver_inner_output)
 
 
 if __name__ == "__main__":
