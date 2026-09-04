@@ -30,6 +30,7 @@ from build_bdam_simulation import (  # noqa: E402
     _prepare_runs_workspace,
     _publish_workspace,
     _solver_settings,
+    _split_first_spinup_year,
     _staged_spinup_schedule,
     _validate_calendar,
     _validate_monitoring_outputs,
@@ -189,6 +190,17 @@ class BDamWorkflowTests(unittest.TestCase):
         self.assertEqual(sum(step.stage == "weekly" for step in metadata), 52)
         self.assertEqual([step.stage_time_days for step in metadata[:2]], [365.0, 730.0])
         self.assertAlmostEqual(float(np.sum(schedule.perlen_days)), 4.0 * 365.0)
+        first, first_metadata, remainder, remainder_metadata = \
+            _split_first_spinup_year(schedule, metadata)
+        self.assertEqual(len(first.perlen_days), 1)
+        self.assertAlmostEqual(float(np.sum(first.perlen_days)), 365.0)
+        self.assertEqual(len(first_metadata), 1)
+        self.assertIsNotNone(remainder)
+        self.assertEqual(len(remainder.perlen_days), 12 + 52 + 1)
+        self.assertAlmostEqual(float(np.sum(remainder.perlen_days)), 3.0 * 365.0)
+        self.assertEqual(len(remainder_metadata), 12 + 52 + 1)
+        self.assertEqual(remainder.time_days[0], 0.0)
+        self.assertAlmostEqual(remainder.time_days[-1], 3.0 * 365.0)
 
     def test_backup_path_is_timestamped_and_collision_safe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -349,7 +361,6 @@ class BDamWorkflowTests(unittest.TestCase):
                                 with patch("build_bdam_simulation._write_summary",
                                            side_effect=lambda path, rows: written.__setitem__(path.name, rows)):
                                     run_from_handoff(model_input, staging_root=root / "staging",
-                                                     solver_profile="conservative",
                                                      save_inner_iterations=True)
 
             staged.assert_not_called()
@@ -367,9 +378,9 @@ class BDamWorkflowTests(unittest.TestCase):
 
             def scalar(self, path: str) -> float:
                 values = {
-                    "/mf6_parameters/fall_average_spinup_years": 1,
-                    "/mf6_parameters/monthly_spinup_years": 0,
-                    "/mf6_parameters/weekly_spinup_years": 0,
+                    "/mf6_parameters/fall_average_spinup_years": 2,
+                    "/mf6_parameters/monthly_spinup_years": 1,
+                    "/mf6_parameters/weekly_spinup_years": 1,
                     "/mf6_parameters/pre_dam_years": 1,
                     "/mf6_parameters/post_dam_years": 0,
                 }
@@ -391,12 +402,18 @@ class BDamWorkflowTests(unittest.TestCase):
             post = FakeHandoff("post_dam")
             initial = np.zeros((1, 1, 1))
             relaxed = (np.ones((1, 1, 1)), np.asarray([1.0]), np.asarray([0.1]))
-            spun_up = (np.full((1, 1, 1), 2.0), np.asarray([2.0]), np.asarray([0.2]))
-            monitored = (np.full((1, 1, 1), 3.0), np.asarray([3.0]), np.asarray([0.3]))
+            first_annual = (np.full((1, 1, 1), 2.0), np.asarray([2.0]), np.asarray([0.2]))
+            spun_up = (np.full((1, 1, 1), 3.0), np.asarray([3.0]), np.asarray([0.3]))
+            monitored = (np.full((1, 1, 1), 4.0), np.asarray([4.0]), np.asarray([0.4]))
             relaxation_schedule = object()
-            staged_schedule = object()
+            complete_schedule = object()
+            first_schedule = object()
+            remaining_schedule = object()
             metadata = [type("Step", (), {
                 "phase": "spinup_fall_average", "stage_year": 1,
+            })()]
+            remaining_metadata = [type("Step", (), {
+                "phase": "spinup_fall_average", "stage_year": 2,
             })()]
 
             with patch("build_bdam_simulation.load_handoff", side_effect=[pre, post]):
@@ -404,22 +421,32 @@ class BDamWorkflowTests(unittest.TestCase):
                     with patch("build_bdam_simulation._fall_average_forcing_schedule",
                                return_value=relaxation_schedule):
                         with patch("build_bdam_simulation._staged_spinup_schedule",
-                                   return_value=(staged_schedule, metadata)):
-                            with patch("build_bdam_simulation._run_year",
-                                       side_effect=[relaxed, spun_up, monitored]) as run_year:
-                                with patch("build_bdam_simulation._period_rows", return_value=[]):
-                                    with patch("build_bdam_simulation._write_summary"):
-                                        run_from_handoff(model_input, staging_root=root / "staging")
+                                   return_value=(complete_schedule, metadata)):
+                            with patch("build_bdam_simulation._split_first_spinup_year",
+                                       return_value=(first_schedule, metadata,
+                                                     remaining_schedule, remaining_metadata)):
+                                with patch("build_bdam_simulation._run_year",
+                                           side_effect=[relaxed, first_annual, spun_up,
+                                                        monitored]) as run_year:
+                                    with patch("build_bdam_simulation._period_rows", return_value=[]):
+                                        with patch("build_bdam_simulation._write_summary"):
+                                            run_from_handoff(model_input, staging_root=root / "staging")
 
-            self.assertEqual(run_year.call_count, 3)
-            relaxation_call, spinup_call, monitored_call = run_year.call_args_list
+            self.assertEqual(run_year.call_count, 4)
+            relaxation_call, first_call, remainder_call, monitored_call = run_year.call_args_list
             self.assertEqual(relaxation_call.kwargs["phase"], "initial_relaxation")
             self.assertIs(relaxation_call.kwargs["runtime_schedule"], relaxation_schedule)
-            np.testing.assert_array_equal(spinup_call.args[3], relaxed[0])
-            np.testing.assert_array_equal(spinup_call.args[4], relaxed[1])
-            np.testing.assert_array_equal(spinup_call.args[5], relaxed[2])
-            self.assertIs(spinup_call.kwargs["runtime_schedule"], staged_schedule)
+            np.testing.assert_array_equal(first_call.args[3], relaxed[0])
+            np.testing.assert_array_equal(first_call.args[4], relaxed[1])
+            np.testing.assert_array_equal(first_call.args[5], relaxed[2])
+            self.assertIs(first_call.kwargs["runtime_schedule"], first_schedule)
+            np.testing.assert_array_equal(remainder_call.args[3], first_annual[0])
+            self.assertIs(remainder_call.kwargs["runtime_schedule"], remaining_schedule)
             np.testing.assert_array_equal(monitored_call.args[3], spun_up[0])
+            self.assertEqual(relaxation_call.kwargs["solver_profile"], "balanced")
+            self.assertEqual(first_call.kwargs["solver_profile"], "conservative")
+            self.assertEqual(remainder_call.kwargs["solver_profile"], "balanced")
+            self.assertEqual(monitored_call.kwargs["solver_profile"], "balanced")
 
     def test_packaged_terrain_defaults_remain_synchronized(self) -> None:
         package = Path(__file__).resolve().parent

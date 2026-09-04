@@ -38,15 +38,15 @@ if ~isequal(size(geometry.X),size(geometry.Y),size(geometry.ZTop)) || ...
 end
 
 spinupSummaryPath = fullfile(runsPath,"spinup_summary.csv");
-spinupWorkspace = fullfile(runsPath,"spinup","staged");
 weeklyPath = fullfile(runsPath,"weekly_summary.csv");
 dailyPath = fullfile(runsPath,"daily_summary.csv");
 hasSpinupSummary = isfile(spinupSummaryPath);
-hasSpinupHeads = isfile(fullfile(spinupWorkspace,"bdam.hds"));
+spinupDefinitions = spinupWorkspaces(runsPath);
+hasSpinupHeads = ~isempty(spinupDefinitions);
 if hasSpinupSummary ~= hasSpinupHeads
     error("BDam:ResultsSummary", ...
         "Spinup output is incomplete under %s. Runs/spinup_summary.csv "+ ...
-        "and Runs/spinup/staged/bdam.hds must either both exist or both be absent.", ...
+        "and completed spinup head workspaces must either both exist or both be absent.", ...
         outputRoot);
 end
 if isfile(weeklyPath) == isfile(dailyPath)
@@ -72,8 +72,7 @@ end
 
 workspaceDefinitions = struct("Path",{},"Phase",{},"PhaseYear",{});
 if hasSpinupHeads
-    workspaceDefinitions(1,1) = struct( ...
-        "Path",string(spinupWorkspace),"Phase","spinup","PhaseYear",1);
+    workspaceDefinitions = spinupDefinitions;
 end
 workspaceDefinitions = [workspaceDefinitions; annualWorkspaces(runsPath,"pre_dam"); ...
     annualWorkspaces(runsPath,"post_dam")];
@@ -114,8 +113,8 @@ end
 
 scopes = struct();
 if hasSpinupHeads
-    spinupFrames = buildSpinupFrames(readers{1},spinupSummary);
-    spinupDuration = readers{1}.Times(end);
+    [spinupFrames,spinupDuration] = buildSpinupFrames( ...
+        readers,workspaceDefinitions,spinupSummary);
     allMonitoredSummary = monitoredSummary;
     allMonitoredSummary.time_days = allMonitoredSummary.time_days+spinupDuration;
     allSummary = verticallyConcatenateSummaries(spinupSummary,allMonitoredSummary);
@@ -206,6 +205,18 @@ for index = 1:numel(years)
 end
 end
 
+function definitions = spinupWorkspaces(runsPath)
+definitions = struct("Path",{},"Phase",{},"PhaseYear",{});
+names = ["first_annual" "staged"];
+for index = 1:numel(names)
+    path = fullfile(runsPath,"spinup",names(index));
+    if isfile(fullfile(path,"bdam.hds"))
+        definitions(end+1,1) = struct( ... %#ok<AGROW>
+            "Path",string(path),"Phase","spinup","PhaseYear",index);
+    end
+end
+end
+
 function targets = normalizeTargets(targets)
 required = ["name","resolved_x_m","resolved_y_m"];
 if ~all(ismember(required,string(targets.Properties.VariableNames))) || isempty(targets)
@@ -226,19 +237,42 @@ equal = height(left) == height(right) && ...
     max(abs(left.resolved_y_m-right.resolved_y_m),[],"all") < 1.0e-9;
 end
 
-function frames = buildSpinupFrames(reader,summary)
+function [frames,duration] = buildSpinupFrames(readers,definitions,summary)
 completed = summary.event == "completed_step";
 rows = find(completed);
-if numel(rows) ~= reader.NumFrames || ...
-        ~timesMatch(summary.time_days(rows),reader.Times)
-    error("BDam:ResultsAlignment", ...
-        "Spinup summary completed steps do not align with bdam.hds times.");
-end
-frames = table(ones(reader.NumFrames,1),transpose(1:reader.NumFrames), ...
-    reader.Times,string(summary.phase(rows)),summary.phase_year(rows), ...
-    summary.phase_time_days(rows), ...
+frames = table([],[],[],strings(0,1),[],[], ...
     VariableNames=["ReaderIndex","LocalFrame","TimeDays","Phase", ...
     "PhaseYear","PhaseTimeDays"]);
+duration = 0;
+cursor = 1;
+for readerIndex = 1:numel(readers)
+    if definitions(readerIndex).Phase ~= "spinup"
+        continue
+    end
+    reader = readers{readerIndex};
+    stop = cursor+reader.NumFrames-1;
+    if stop > numel(rows)
+        error("BDam:ResultsAlignment", ...
+            "Spinup summary contains fewer completed steps than the head workspaces.");
+    end
+    blockRows = rows(cursor:stop);
+    globalTimes = duration+reader.Times;
+    if ~timesMatch(summary.time_days(blockRows),globalTimes)
+        error("BDam:ResultsAlignment", ...
+            "Spinup summary completed steps do not align with the spinup head workspaces.");
+    end
+    block = table(repmat(readerIndex,reader.NumFrames,1), ...
+        transpose(1:reader.NumFrames),globalTimes,string(summary.phase(blockRows)), ...
+        summary.phase_year(blockRows),summary.phase_time_days(blockRows), ...
+        VariableNames=frames.Properties.VariableNames);
+    frames = [frames;block]; %#ok<AGROW>
+    duration = duration+reader.Times(end);
+    cursor = stop+1;
+end
+if cursor-1 ~= numel(rows)
+    error("BDam:ResultsAlignment", ...
+        "Spinup summary contains more completed steps than the head workspaces.");
+end
 end
 
 function [frames,duration] = buildMonitoredFrames(readers,definitions,summary)

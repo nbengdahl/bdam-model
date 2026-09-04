@@ -21,10 +21,12 @@ All notable changes to BDam will be documented in this file.
 
 ### Changed
 
-- The default balanced solver uses `COMPLEX` for the first solve from
-  analytical initial conditions and `MODERATE` for restarted workspaces, with
-  the existing strict convergence tolerances throughout;
-  `--solver-profile conservative` uses `COMPLEX` for every solve.
+- The runner uses robust `COMPLEX` settings for the initial relaxation and
+  the first 365-day annual solve, then automatically returns to balanced
+  `MODERATE` settings for the remaining staged spinup and monitored years.
+  The first annual spinup workspace is retained separately so its solver
+  profile and runtime remain auditable, and global conservative runs are
+  prevented.
 - Default UZF `NWAVESETS` is reduced from 1000 to 20. Both UZF wave-capacity
   inputs must be positive integers, and MF6 capacity failures now recommend
   regenerating inputs with 40 wave sets.

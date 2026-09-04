@@ -98,6 +98,38 @@ fclose(fileID);
 testCase.verifyError(@()loadBDamResults(root),"BDam:ResultsSummary");
 end
 
+function testLoaderIndexesFirstAnnualAndRemainingSpinup(testCase)
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+root = createZeroSpinupFixture(folder.Folder);
+firstWorkspace = fullfile(root,"Runs","spinup","first_annual");
+remainderWorkspace = fullfile(root,"Runs","spinup","staged");
+mkdir(firstWorkspace);
+mkdir(remainderWorkspace);
+targets = table("head_test",1,1, ...
+    VariableNames=["name","resolved_x_m","resolved_y_m"]);
+writetable(targets,fullfile(firstWorkspace,"monitoring_targets.csv"));
+writetable(targets,fullfile(remainderWorkspace,"monitoring_targets.csv"));
+writeHeadFile(fullfile(firstWorkspace,"bdam.hds"),365,3*ones(2));
+writeHeadFile(fullfile(remainderWorkspace,"bdam.hds"),[30 60], ...
+    cat(4,4*ones(2),5*ones(2)));
+summary = table( ...
+    ["spinup_fall_average";"spinup_fall_average";"spinup_monthly";"spinup_monthly"], ...
+    [1;1;1;1],["initial";"completed_step";"completed_step";"completed_step"], ...
+    [0;365;395;425],[0;365;30;60], ...
+    ["fall_average";"fall_average";"monthly";"monthly"], ...
+    VariableNames=["phase","phase_year","event","time_days", ...
+    "phase_time_days","spinup_stage"]);
+writetable(summary,fullfile(root,"Runs","spinup_summary.csv"));
+
+results = loadBDamResults(root);
+testCase.verifyTrue(results.HasSpinup);
+testCase.verifyEqual(results.SpinupDurationDays,425,"AbsTol",1.0e-12);
+testCase.verifyEqual(results.Scopes.Spinup.Frames.ReaderIndex,[1;2;2]);
+testCase.verifyEqual(results.Scopes.Spinup.Frames.TimeDays,[365;395;425], ...
+    "AbsTol",1.0e-12);
+testCase.verifyEqual(results.Scopes.All.EndDay,439,"AbsTol",1.0e-12);
+end
+
 function testViewerOffersTwentyFramesPerSecond(testCase)
 app = BDamResultsViewerApp();
 cleanup = onCleanup(@()delete(app));

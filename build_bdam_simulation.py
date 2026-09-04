@@ -302,6 +302,45 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
     return schedule, metadata
 
 
+def _slice_runtime_schedule(schedule: RuntimeSchedule, start: int, stop: int) -> RuntimeSchedule:
+    """Return a self-contained consecutive slice of a runtime schedule."""
+    if start < 0 or stop <= start or stop > len(schedule.perlen_days):
+        raise ValueError("Runtime-schedule slice bounds are invalid.")
+    perlen = np.asarray(schedule.perlen_days[start:stop], dtype=float)
+    return RuntimeSchedule(
+        perlen_days=perlen,
+        nstp=np.asarray(schedule.nstp[start:stop], dtype=int),
+        time_days=np.concatenate(([0.0], np.cumsum(perlen))),
+        forcing={
+            name: np.asarray(values[start:stop + 1], dtype=float)
+            for name, values in schedule.forcing.items()
+        },
+        downstream_control_stage_m=np.asarray(
+            schedule.downstream_control_stage_m[start:stop + 1], dtype=float),
+        ghb_reference_head_m=np.asarray(
+            schedule.ghb_reference_head_m[:, start:stop + 1], dtype=float),
+    )
+
+
+def _split_first_spinup_year(
+        schedule: RuntimeSchedule, metadata: list[SpinupStep],
+        ) -> tuple[RuntimeSchedule, list[SpinupStep], RuntimeSchedule | None, list[SpinupStep]]:
+    """Separate the first configured 365-day spinup year from the remainder."""
+    if not metadata or len(metadata) != len(schedule.perlen_days):
+        raise ValueError("Spinup schedule and metadata must contain matching steps.")
+    first = metadata[0]
+    stop = next((index for index, step in enumerate(metadata)
+                 if step.phase != first.phase or step.stage_year != first.stage_year),
+                len(metadata))
+    first_schedule = _slice_runtime_schedule(schedule, 0, stop)
+    if not np.isclose(np.sum(first_schedule.perlen_days), 365.0):
+        raise RuntimeError("The first configured spinup run must span exactly 365 days.")
+    if stop == len(metadata):
+        return first_schedule, metadata[:stop], None, []
+    return (first_schedule, metadata[:stop],
+            _slice_runtime_schedule(schedule, stop, len(metadata)), metadata[stop:])
+
+
 def load_handoff(h5_path: Path) -> Handoff:
     manifest_path = h5_path.with_name("preparation_manifest.json")
     if not h5_path.is_file():
@@ -823,7 +862,11 @@ def _execute_mf6(workspace: Path, solver_profile: str = "balanced") -> float:
             )
         elif solver_profile == "balanced" and re.search(
                 r"convergence failure|failed to converge|did not converge", combined, re.IGNORECASE):
-            guidance = "\nRerun the unchanged model with --solver-profile conservative."
+            guidance = (
+                "\nA balanced solve failed after the one conservative annual solve. "
+                "Retain this diagnostic workspace and report the failure; do not apply "
+                "the conservative profile to subsequent solves."
+            )
         report = stdout[-4000:]
         raise RuntimeError(
             f"MF6 did not terminate normally (exit code {completed.returncode}).\n{report}{guidance}"
@@ -1712,6 +1755,11 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
                      solver_profile: str = "balanced",
                      save_inner_iterations: bool = False) -> None:
     """Spin up pre-dam conditions, then run the configured pre-/post-dam years."""
+    if solver_profile != "balanced":
+        raise ValueError(
+            "Subsequent solves must use the balanced profile; the runner applies "
+            "conservative settings to the first 365-day annual solve automatically."
+        )
     _solver_settings(solver_profile, save_inner_iterations)
     model_input, pre_path, post_path = _resolve_handoffs(path)
     workspace = model_input.parent / "Runs"
@@ -1732,9 +1780,8 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     if backup is not None:
         print(f"Archived existing run outputs at {backup}.")
     print(f"Annual MF6 workspaces will be staged under {Path(staging_root).expanduser().resolve()}.")
-    profile_description = ("COMPLEX initialization, MODERATE restarts"
-                           if solver_profile == "balanced" else "COMPLEX for every solve")
-    print(f"IMS solver profile: {solver_profile} ({profile_description}).")
+    print("IMS solver policy: conservative for the first 365-day annual solve; "
+          f"{solver_profile} for every subsequent solve.")
 
     heads = _default_heads(pre)
     stages = wc = None
@@ -1753,32 +1800,51 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
                 save_inner_iterations=save_inner_iterations)
             print("Completed 7-day initial relaxation with September--November average forcing.")
         schedule, metadata = _staged_spinup_schedule(pre, spinup_counts)
-        spinup_ws = workspace / "spinup" / "staged"
+        first_schedule, first_metadata, remaining_schedule, remaining_metadata = \
+            _split_first_spinup_year(schedule, metadata)
+        first_ws = workspace / "spinup" / "first_annual"
         initial_heads, initial_stages = heads, stages
-        heads, stages, wc = _run_year(pre_path, pre, spinup_ws, heads, stages, wc,
-                                      save_monitoring=True, staging_root=Path(staging_root),
-                                      phase="spinup", year=1, runtime_schedule=schedule,
-                                      solver_profile=solver_profile,
-                                      save_inner_iterations=save_inner_iterations)
-        spinup_rows.extend(_period_rows(pre, spinup_ws, initial_heads, initial_stages,
-                                        metadata[0].phase, metadata[0].stage_year, 0.0,
-                                        include_initial=True, runtime_schedule=schedule,
-                                        step_metadata=metadata))
+        heads, stages, wc = _run_year(
+            pre_path, pre, first_ws, heads, stages, wc,
+            save_monitoring=True, staging_root=Path(staging_root),
+            phase="spinup_first_annual", year=1, runtime_schedule=first_schedule,
+            solver_profile="conservative", save_inner_iterations=save_inner_iterations)
+        spinup_rows.extend(_period_rows(
+            pre, first_ws, initial_heads, initial_stages,
+            first_metadata[0].phase, first_metadata[0].stage_year, 0.0,
+            include_initial=True, runtime_schedule=first_schedule,
+            step_metadata=first_metadata))
+        if remaining_schedule is not None:
+            spinup_ws = workspace / "spinup" / "staged"
+            initial_heads, initial_stages = heads, stages
+            heads, stages, wc = _run_year(
+                pre_path, pre, spinup_ws, heads, stages, wc,
+                save_monitoring=True, staging_root=Path(staging_root),
+                phase="spinup_remainder", year=1, runtime_schedule=remaining_schedule,
+                solver_profile=solver_profile, save_inner_iterations=save_inner_iterations)
+            spinup_rows.extend(_period_rows(
+                pre, spinup_ws, initial_heads, initial_stages,
+                remaining_metadata[0].phase, remaining_metadata[0].stage_year, 365.0,
+                include_initial=False, runtime_schedule=remaining_schedule,
+                step_metadata=remaining_metadata))
         print("Completed continuous staged pre-dam spinup: "
               f"fall-average years={values['fall_average_spinup_years']}, "
               f"monthly years={values['monthly_spinup_years']}, "
               f"weekly years={values['weekly_spinup_years']}.")
 
     rows: list[dict] = []
+    first_annual_pending = not bool(sum(spinup_counts.values()))
     elapsed_days = 0.0
     for year in range(1, values["pre_dam_years"] + 1):
         run_ws = workspace / "pre_dam" / f"year_{year:02d}"
         include_initial = year == 1
         initial_heads, initial_stages = heads, stages
+        annual_profile = "conservative" if first_annual_pending else solver_profile
         heads, stages, wc = _run_year(pre_path, pre, run_ws, heads, stages, wc,
                                       save_monitoring=True, staging_root=Path(staging_root),
-                                      phase="pre_dam", year=year, solver_profile=solver_profile,
+                                      phase="pre_dam", year=year, solver_profile=annual_profile,
                                       save_inner_iterations=save_inner_iterations)
+        first_annual_pending = False
         rows.extend(_period_rows(pre, run_ws, initial_heads, initial_stages,
                                  "pre_dam", year, elapsed_days, include_initial))
         elapsed_days += float(np.sum(pre.array("/calendar/perlen_days").ravel()))
@@ -1794,10 +1860,12 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     for year in range(1, values["post_dam_years"] + 1):
         run_ws = workspace / "post_dam" / f"year_{year:02d}"
         initial_heads, initial_stages = heads, stages
+        annual_profile = "conservative" if first_annual_pending else solver_profile
         heads, stages, wc = _run_year(post_path, post, run_ws, heads, stages, wc,
                                       save_monitoring=True, staging_root=Path(staging_root),
-                                      phase="post_dam", year=year, solver_profile=solver_profile,
+                                      phase="post_dam", year=year, solver_profile=annual_profile,
                                       save_inner_iterations=save_inner_iterations)
+        first_annual_pending = False
         rows.extend(_period_rows(post, run_ws, initial_heads, initial_stages,
                                  "post_dam", year, elapsed_days, include_initial=(year == 1)))
         elapsed_days += float(np.sum(post.array("/calendar/perlen_days").ravel()))
@@ -1810,8 +1878,8 @@ def main() -> None:
     parser.add_argument("handoff", type=Path, help="sole input: preparation_handoff.h5")
     parser.add_argument("--staging-root", type=Path, default=None,
                         help="local scratch directory for annual MF6 workspaces (default: system temporary directory)")
-    parser.add_argument("--solver-profile", choices=sorted(SOLVER_PROFILES), default="balanced",
-                        help="IMS tuning policy (default: balanced; use conservative if a restart fails)")
+    parser.add_argument("--solver-profile", choices=("balanced",), default="balanced",
+                        help="IMS profile for solves after the first 365-day annual solve")
     parser.add_argument("--solver-inner-output", action="store_true",
                         help="also save detailed inner-iteration CSV diagnostics")
     args = parser.parse_args()

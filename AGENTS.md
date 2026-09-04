@@ -171,14 +171,16 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 
 Do not run this command a second time while the first process is active.
 
-The default `balanced` solver profile uses COMPLEX IMS settings for the 7-day
-September--November-average relaxation from analytical initial conditions and faster MODERATE
-settings for restarted workspaces, with the same strict closure tolerances
-throughout. When no fall-average year is configured, the first requested solve
-uses COMPLEX. If and only if a restarted solve reports solver convergence
-failure, rerun the
-unchanged handoffs with `--solver-profile conservative`. If MF6
-specifically reports that UZF `NWAVESETS` must be increased, change
+The 7-day September--November-average relaxation from analytical initial
+conditions uses the robust COMPLEX initialization settings. The runner then
+uses the `conservative` profile only for the first 365-day annual run and
+returns to the faster `balanced` profile for every subsequent run,
+including every remaining fall-average, monthly, and weekly part of staged
+spinup and all monitored pre-dam and post-dam years. The strict closure
+tolerances remain unchanged between profiles. Do not pass
+`--solver-profile conservative`; the runner manages the one conservative
+annual solve internally and prevents conservative settings from being applied
+globally. If MF6 specifically reports that UZF `NWAVESETS` must be increased, change
 `mf6_parameters.uzf_nwavesets` from 20 to 40 in `MakeInputs.m`, regenerate the
 paired handoffs, and rerun. Never increase wave sets automatically or alter
 the calendar. Use `--solver-inner-output` only for detailed solver diagnosis.
@@ -246,6 +248,7 @@ The default staged-spinup plus weekly pre-/post-dam run should produce these dir
 
 ```text
 Runs/spinup/initial_relaxation
+Runs/spinup/first_annual
 Runs/spinup/staged
 Runs/pre_dam/year_01
 Runs/post_dam/year_01
@@ -257,8 +260,9 @@ For every completed workspace, verify all of the following:
 - `bdam.hds`, `bdam.cbc`, `bdam.lak.stage`, `bdam.lak.bud`,
   `bdam.uzf.wc`, and `bdam.uzf.bud` exist and are nonempty.
 - The runner accepted the configured final saved time (7 days for the initial
-  relaxation, 1095 days for the default staged spinup, and 365 days for each
-  monitored annual workspace).
+  relaxation, 365 days for the first annual spinup workspace, the configured
+  remainder duration for `spinup/staged`, and 365 days for each monitored
+  annual workspace).
 - `bdam.water_balance.json` exists and contains `"status": "pass"`.
 - `bdam.solver_stats.json` exists and reports normal termination, the selected
   profile, UZF wave capacity, solve time, iteration totals, and MF6 version.
@@ -304,7 +308,7 @@ Use this order. Do not jump directly to changing source code or model inputs.
 | Active staging directory temporarily lacks `bdam.lst` | Treat it as a possible annual transition and repeat the guarded check shortly. |
 | `Runs` is empty while MF6 is active and staging files grow | Continue monitoring; publication happens only after annual validation. |
 | Required test fails, MATLAB reports a script/model assertion, MF6 exits nonzero, a required output is unreadable, final time is not 365 days, or water balance does not pass | Stop. Preserve the diagnostic staging workspace and report exact evidence. Do not alter physics, calendar, solver rules, or validation. |
-| Balanced IMS profile reports convergence failure | Rerun the unchanged handoffs once with `--solver-profile conservative`. |
+| First 365-day annual solve needs the more robust IMS profile | The runner applies `conservative` only to that annual solve and automatically resumes every remaining staged-spinup and monitored solve with `balanced`; never apply `conservative` globally. |
 | MF6 reports that UZF `NWAVESETS` must be increased | Change the user-defined value from 20 to 40, regenerate both handoffs with `MakeInputs.m`, and rerun. Increase further only if MF6 repeats the same error. |
 
 ## Reproducibility comparisons

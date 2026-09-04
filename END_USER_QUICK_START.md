@@ -207,20 +207,14 @@ each weekly year has 52 periods/steps. Therefore a 1/1/1 spinup has 1, 12, and
 52 saved stage endpoints; a 2/1/1 spinup has 2, 12, and 52. Do not subdivide a
 spinup stage unless the user explicitly requests sub-steps.
 
-The default `balanced` solver profile uses the robust MF6 `COMPLEX` preset for
-the relaxation from analytical initial conditions and the faster `MODERATE`
-preset for restarted workspaces, always with the same strict convergence
-tolerances. If the relaxation is not requested, the first solve uses the robust
-preset. If a restarted solve reports a convergence failure, rerun the
-unchanged inputs with:
-
-```zsh
-python3 build_bdam_simulation.py ModelInput \
-  --staging-root ../staging --solver-profile conservative
-```
-
-The conservative profile uses `COMPLEX` for every solve without changing
-model inputs, the calendar, or closure tolerances. Add
+The runner uses robust MF6 `COMPLEX` settings for the relaxation from
+analytical initial conditions and for only the first 365-day annual solve.
+That annual solve uses the `conservative` profile. Every remaining staged
+spinup and monitored solve returns to the faster `balanced` profile and its
+`MODERATE` preset, always with the same strict convergence tolerances. With no
+spinup, the first monitored annual solve is conservative and later solves are
+balanced. The runner prevents conservative settings from being selected for
+the whole workflow. Add
 `--solver-inner-output` only when detailed inner-iteration diagnostics are
 needed.
 
@@ -234,6 +228,7 @@ A successful default run contains:
 
 ```text
 Runs/spinup/initial_relaxation/
+Runs/spinup/first_annual/
 Runs/spinup/staged/
 Runs/pre_dam/year_01/
 Runs/post_dam/year_01/
@@ -248,8 +243,9 @@ LAK, and UZF binary outputs, the configured final saved time, and
 requirements before publishing a workspace.
 
 The Results Viewer intentionally starts the Spinup timeline with the
-post-relaxation state in `Runs/spinup/staged`; the separately validated
-`initial_relaxation` workspace remains available for audit.
+post-relaxation state in `Runs/spinup/first_annual`, continues through
+`Runs/spinup/staged`, and keeps the separately validated `initial_relaxation`
+workspace available for audit.
 
 ## Graphical terrain application
 

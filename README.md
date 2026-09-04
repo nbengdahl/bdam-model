@@ -179,7 +179,8 @@ extends spinup automatically. When at least one fall-average year is requested,
 the runner first solves one 7-day transient period at the same constant
 September--November-average forcing in `Runs/spinup/initial_relaxation`. Its final groundwater,
 lake, and UZF state initializes the continuous staged simulation in
-`Runs/spinup/staged`, which uses the configured stages in this order:
+`Runs/spinup/first_annual`. Its final state initializes
+`Runs/spinup/staged`, which contains the remainder of the configured stages in this order:
 
 1. Each fall-average year is one 365-day stress period with exactly one
    MODFLOW time step and one saved annual endpoint. Inflow, atmospheric rates,
@@ -255,18 +256,13 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
 
-The default `balanced` solver profile uses the robust `COMPLEX` IMS preset for
-the 7-day relaxation from analytical initial conditions, then the faster
-`MODERATE` preset for the restarted staged and monitored workspaces. If no
-fall-average year is configured, the first requested solve retains the robust
-preset. The strict head and flow closure tolerances remain unchanged. If a
-restarted solve reports a solver convergence failure,
-rerun the unchanged inputs with the conservative profile:
-
-```zsh
-python3 build_bdam_simulation.py ModelInput \
-  --staging-root ../staging --solver-profile conservative
-```
+The runner uses robust `COMPLEX` IMS settings for the 7-day relaxation and
+the first 365-day annual solve. That annual solve is recorded with the
+`conservative` profile. Every remaining staged-spinup and monitored solve uses
+the faster `balanced` profile and its `MODERATE` preset. If no spinup is
+configured, the first monitored annual solve is conservative and all later
+solves are balanced. The strict head and flow closure tolerances remain
+unchanged. The runner prevents `conservative` from being selected globally.
 
 Detailed inner-iteration diagnostics are normally unnecessary. Add
 `--solver-inner-output` only when diagnosing solver behavior. Every completed
@@ -384,14 +380,15 @@ the analytical state—and all completed staged-spinup states and derived fluxes
 stage-relative time, cumulative transient time, and interval duration. With the
 default 1/1/1 settings it contains 66 rows: one initial state plus one annual,
 12 monthly, and 52 weekly completed steps. Raw head, lake, and GHB observation
-CSVs and `bdam.fluxes.csv` are generated at every saved step in the staged
-spinup workspace and every pre-dam and post-dam annual workspace. Flux rates are m3/day and
+CSVs and `bdam.fluxes.csv` are generated at every saved step in the spinup
+workspaces and every pre-dam and post-dam annual workspace. Flux rates are m3/day and
 interval-integrated volumes are m3.
 When all spinup counts are zero, `Runs/spinup_summary.csv` and
-`Runs/spinup/staged` are intentionally absent.
+both `Runs/spinup/first_annual` and `Runs/spinup/staged` are intentionally absent.
 The relaxation workspace retains its own validated binary, observation, flux,
 water-balance, and solver-statistics outputs. The Results Viewer begins its
-Spinup timeline at the post-relaxation state in `Runs/spinup/staged`.
+Spinup timeline at the post-relaxation state in `Runs/spinup/first_annual`
+and continues through `Runs/spinup/staged` when a remainder exists.
 
 In the flux interface, `in_total` and `out_total` are coupled-system external
 fluxes. Inputs are land infiltration, lake precipitation, upstream surface
