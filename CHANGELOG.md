@@ -6,6 +6,9 @@ All notable changes to BDam will be documented in this file.
 
 ### Added
 
+- A 7-day transient initial relaxation at duration-weighted annual-mean
+  forcing now precedes configured mean-forcing spinup years. Its final
+  groundwater, lake, and UZF state initializes the unchanged staged spinup.
 - Balanced and conservative IMS solver profiles, compact outer-iteration
   diagnostics, optional detailed inner-iteration output, and per-workspace
   `bdam.solver_stats.json` provenance.
@@ -28,6 +31,9 @@ All notable changes to BDam will be documented in this file.
 - Representative pre-/post-dam benchmarks improved from 129.1/134.5 seconds
   and roughly 11 GB allocated to 71.7/68.7 seconds and 286--289 MB allocated,
   while retaining strict convergence tolerances.
+- The relaxation plus restarted default 1/1/1 spinup took 124.1 seconds versus
+  about 174 seconds without the relaxation, a 28.7% initialization-time
+  reduction on the benchmark machine.
 - Python requirements are now installed once for the user's selected
   persistent `python3` and reused across runs. The documented workflow no
   longer creates a separate virtual environment inside every run directory.

@@ -193,15 +193,19 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
 
-The default sequence is one annual-mean spinup year, one monthly spinup year,
-one weekly spinup year, one monitored pre-dam year, and one monitored post-dam
-year. A quiet terminal is normal because MF6 output is captured. Live progress
-is written to `bdam.lst` in the active directory under `../staging`.
+The default sequence is one 7-day relaxation at annual-mean forcing, one
+annual-mean spinup year, one monthly spinup year, one weekly spinup year, one
+monitored pre-dam year, and one monitored post-dam year. The relaxation runs
+only when at least one annual-mean spinup year is configured, and its final
+groundwater, lake, and UZF state initializes the annual-mean year. A quiet
+terminal is normal because MF6 output is captured. Live progress is written to
+`bdam.lst` in the active directory under `../staging`.
 
 The default `balanced` solver profile uses the robust MF6 `COMPLEX` preset for
-the first solve from analytical initial conditions and the faster `MODERATE`
+the relaxation from analytical initial conditions and the faster `MODERATE`
 preset for restarted workspaces, always with the same strict convergence
-tolerances. If a restarted solve reports a convergence failure, rerun the
+tolerances. If the relaxation is not requested, the first solve uses the robust
+preset. If a restarted solve reports a convergence failure, rerun the
 unchanged inputs with:
 
 ```zsh
@@ -223,6 +227,7 @@ allocation from roughly 11 GB to 286--289 MB. Runtime varies by computer.
 A successful default run contains:
 
 ```text
+Runs/spinup/initial_relaxation/
 Runs/spinup/staged/
 Runs/pre_dam/year_01/
 Runs/post_dam/year_01/
@@ -235,6 +240,10 @@ LAK, and UZF binary outputs, the configured final saved time, and
 `bdam.water_balance.json` with `"status": "pass"`, and
 `bdam.solver_stats.json` with normal termination. The runner enforces these
 requirements before publishing a workspace.
+
+The Results Viewer intentionally starts the Spinup timeline with the
+post-relaxation state in `Runs/spinup/staged`; the separately validated
+`initial_relaxation` workspace remains available for audit.
 
 ## Graphical terrain application
 

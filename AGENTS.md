@@ -166,10 +166,12 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 
 Do not run this command a second time while the first process is active.
 
-The default `balanced` solver profile uses COMPLEX IMS settings for the first
-solve from analytical initial conditions and faster MODERATE settings for
-restarted workspaces, with the same strict closure tolerances throughout. If
-and only if a restarted solve reports solver convergence failure, rerun the
+The default `balanced` solver profile uses COMPLEX IMS settings for the 7-day
+mean-forcing relaxation from analytical initial conditions and faster MODERATE
+settings for restarted workspaces, with the same strict closure tolerances
+throughout. When no mean-forcing year is configured, the first requested solve
+uses COMPLEX. If and only if a restarted solve reports solver convergence
+failure, rerun the
 unchanged handoffs with `--solver-profile conservative`. If MF6
 specifically reports that UZF `NWAVESETS` must be increased, change
 `mf6_parameters.uzf_nwavesets` from 20 to 40 in `MakeInputs.m`, regenerate the
@@ -238,6 +240,7 @@ then report the evidence. Do not change model settings or restart blindly.
 The default staged-spinup plus weekly pre-/post-dam run should produce these directories:
 
 ```text
+Runs/spinup/initial_relaxation
 Runs/spinup/staged
 Runs/pre_dam/year_01
 Runs/post_dam/year_01
@@ -248,8 +251,9 @@ For every completed workspace, verify all of the following:
 - `mfsim.lst` contains `Normal termination of simulation.`
 - `bdam.hds`, `bdam.cbc`, `bdam.lak.stage`, `bdam.lak.bud`,
   `bdam.uzf.wc`, and `bdam.uzf.bud` exist and are nonempty.
-- The runner accepted the configured final saved time (1095 days for the
-  default staged spinup and 365 days for each monitored annual workspace).
+- The runner accepted the configured final saved time (7 days for the initial
+  relaxation, 1095 days for the default staged spinup, and 365 days for each
+  monitored annual workspace).
 - `bdam.water_balance.json` exists and contains `"status": "pass"`.
 - `bdam.solver_stats.json` exists and reports normal termination, the selected
   profile, UZF wave capacity, solve time, iteration totals, and MF6 version.

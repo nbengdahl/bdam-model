@@ -175,8 +175,11 @@ mf6_parameters.uzf_nwavesets = 20;
 
 Spinup always uses the pre-dam condition. Its three year counts are independent
 nonnegative integers and may all be zero. The runner never adds hidden years or
-extends spinup automatically. It builds one continuous transient simulation in
-`Runs/spinup/staged`, using the configured stages in this order:
+extends spinup automatically. When at least one mean-forcing year is requested,
+the runner first solves one 7-day transient period at the same duration-weighted
+annual-mean forcing in `Runs/spinup/initial_relaxation`. Its final groundwater,
+lake, and UZF state initializes the continuous staged simulation in
+`Runs/spinup/staged`, which uses the configured stages in this order:
 
 1. Each mean-forcing year has 12 water-year calendar-month steps. Inflow, atmospheric
    rates, downstream stage, and all GHB heads stay at their duration-weighted
@@ -252,9 +255,11 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 ```
 
 The default `balanced` solver profile uses the robust `COMPLEX` IMS preset for
-the first solve from analytical initial conditions, then the faster `MODERATE`
-preset for restarted workspaces. The strict head and flow closure tolerances
-remain unchanged. If a restarted solve reports a solver convergence failure,
+the 7-day relaxation from analytical initial conditions, then the faster
+`MODERATE` preset for the restarted staged and monitored workspaces. If no
+mean-forcing year is configured, the first requested solve retains the robust
+preset. The strict head and flow closure tolerances remain unchanged. If a
+restarted solve reports a solver convergence failure,
 rerun the unchanged inputs with the conservative profile:
 
 ```zsh
@@ -283,6 +288,14 @@ pre-dam and 0.668 mm post-dam; lake-stage differences were below
 1.4e-8 m and key-flux differences were below 0.006%. These measurements are
 representative rather than performance guarantees for other hardware or
 inputs.
+
+The 7-day relaxation benchmark took 38.9 seconds and reduced the following
+continuous default 1/1/1 staged spinup from about 174 seconds to 85.2 seconds.
+Together they took 124.1 seconds, a 28.7% initialization-time reduction on the
+benchmark machine. Separately launched annual-mean, monthly, and weekly
+diagnostic workspaces took 44.3, 45.5, and 72.8 seconds; those isolated values
+include repeated process startup and finalization and therefore are not additive
+for the normal continuous staged workspace.
 
 The steps produce:
 
@@ -371,8 +384,9 @@ upstream-to-downstream. In pre-dam years, the single river/lake is divided at
 the reference dam line and reported as upstream Lake 1 and downstream Lake 2
 portions so the same columns are available before and after dam installation.
 
-`Runs/spinup_summary.csv` separately records the analytical initial state and
-all completed staged-spinup states and derived fluxes. Rows identify
+`Runs/spinup_summary.csv` separately records the state supplied to the staged
+workspace—post-relaxation when a mean-forcing year is configured, otherwise
+the analytical state—and all completed staged-spinup states and derived fluxes. Rows identify
 `spinup_mean_forcing`, `spinup_monthly`, or `spinup_weekly`, the stage year,
 stage-relative time, cumulative transient time, and interval duration. With the
 default 1/1/1 settings it contains 77 rows: one initial state plus 12 mean,
@@ -382,6 +396,9 @@ spinup workspace and every pre-dam and post-dam annual workspace. Flux rates are
 interval-integrated volumes are m3.
 When all spinup counts are zero, `Runs/spinup_summary.csv` and
 `Runs/spinup/staged` are intentionally absent.
+The relaxation workspace retains its own validated binary, observation, flux,
+water-balance, and solver-statistics outputs. The Results Viewer begins its
+Spinup timeline at the post-relaxation state in `Runs/spinup/staged`.
 
 In the flux interface, `in_total` and `out_total` are coupled-system external
 fluxes. Inputs are land infiltration, lake precipitation, upstream surface

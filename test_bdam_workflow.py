@@ -23,6 +23,7 @@ from build_bdam_simulation import (  # noqa: E402
     _create_staging_workspace,
     _duration_weighted_period_means,
     _execute_mf6,
+    _mean_forcing_schedule,
     _next_backup_path,
     _positive_integer,
     _prepare_runs_workspace,
@@ -107,6 +108,38 @@ class BDamWorkflowTests(unittest.TestCase):
             float(np.sum(daily_rates)),
             float(np.sum(weekly * np.diff(weekly_edges))),
             places=10,
+        )
+
+    def test_initial_relaxation_is_one_week_at_annual_mean_forcing(self) -> None:
+        class FakeHandoff:
+            def array(self, path: str, dtype=float) -> np.ndarray:
+                values = {
+                    "/calendar/perlen_days": np.asarray([100.0, 265.0]),
+                    "/forcing/upstream_inflow_m3_per_day": np.asarray([1.0, 3.0, 3.0]),
+                    "/forcing/land_recharge_m_per_day": np.asarray([2.0, 4.0, 4.0]),
+                    "/forcing/land_et_m_per_day": np.asarray([3.0, 5.0, 5.0]),
+                    "/forcing/lake_precipitation_m_per_day": np.asarray([4.0, 6.0, 6.0]),
+                    "/forcing/lake_evaporation_m_per_day": np.asarray([5.0, 7.0, 7.0]),
+                    "/boundaries/downstream_control_stage_m": np.asarray([10.0, 12.0, 12.0]),
+                    "/boundaries/ghb/reference_head_m": np.asarray([
+                        [20.0, 22.0, 22.0], [30.0, 34.0, 34.0],
+                    ]),
+                }
+                return np.asarray(values[path], dtype=dtype)
+
+        schedule = _mean_forcing_schedule(FakeHandoff(), 7.0)
+        self.assertEqual(schedule.perlen_days.tolist(), [7.0])
+        self.assertEqual(schedule.nstp.tolist(), [1])
+        self.assertEqual(schedule.time_days.tolist(), [0.0, 7.0])
+        expected_inflow = (1.0 * 100.0 + 3.0 * 265.0) / 365.0
+        np.testing.assert_allclose(
+            schedule.forcing["upstream_inflow_m3_per_day"],
+            [expected_inflow, expected_inflow],
+        )
+        np.testing.assert_allclose(
+            schedule.ghb_reference_head_m[:, 0],
+            [(20.0 * 100.0 + 22.0 * 265.0) / 365.0,
+             (30.0 * 100.0 + 34.0 * 265.0) / 365.0],
         )
 
     def test_backup_path_is_timestamped_and_collision_safe(self) -> None:
@@ -278,6 +311,67 @@ class BDamWorkflowTests(unittest.TestCase):
             self.assertTrue(run_year.call_args.kwargs["save_inner_iterations"])
             self.assertEqual(written["spinup_summary.csv"], [])
             self.assertEqual(written["weekly_summary.csv"], summary_rows)
+
+    def test_mean_spinup_restarts_from_one_week_relaxation_state(self) -> None:
+        class FakeHandoff:
+            def __init__(self, scenario: str) -> None:
+                self.manifest = {"scenario": scenario, "time_resolution": "weekly"}
+
+            def scalar(self, path: str) -> float:
+                values = {
+                    "/mf6_parameters/mean_forcing_spinup_years": 1,
+                    "/mf6_parameters/monthly_spinup_years": 0,
+                    "/mf6_parameters/weekly_spinup_years": 0,
+                    "/mf6_parameters/pre_dam_years": 1,
+                    "/mf6_parameters/post_dam_years": 0,
+                }
+                return values[path]
+
+            def array(self, path: str, dtype=float) -> np.ndarray:
+                if path != "/calendar/perlen_days":
+                    raise AssertionError(f"Unexpected array request: {path}")
+                return np.asarray([365.0], dtype=dtype)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model_input = root / "ModelInput"
+            for scenario in ("pre_dam", "post_dam"):
+                scenario_path = model_input / scenario
+                scenario_path.mkdir(parents=True)
+                (scenario_path / "preparation_handoff.h5").touch()
+            pre = FakeHandoff("pre_dam")
+            post = FakeHandoff("post_dam")
+            initial = np.zeros((1, 1, 1))
+            relaxed = (np.ones((1, 1, 1)), np.asarray([1.0]), np.asarray([0.1]))
+            spun_up = (np.full((1, 1, 1), 2.0), np.asarray([2.0]), np.asarray([0.2]))
+            monitored = (np.full((1, 1, 1), 3.0), np.asarray([3.0]), np.asarray([0.3]))
+            relaxation_schedule = object()
+            staged_schedule = object()
+            metadata = [type("Step", (), {
+                "phase": "spinup_mean_forcing", "stage_year": 1,
+            })()]
+
+            with patch("build_bdam_simulation.load_handoff", side_effect=[pre, post]):
+                with patch("build_bdam_simulation._default_heads", return_value=initial):
+                    with patch("build_bdam_simulation._mean_forcing_schedule",
+                               return_value=relaxation_schedule):
+                        with patch("build_bdam_simulation._staged_spinup_schedule",
+                                   return_value=(staged_schedule, metadata)):
+                            with patch("build_bdam_simulation._run_year",
+                                       side_effect=[relaxed, spun_up, monitored]) as run_year:
+                                with patch("build_bdam_simulation._period_rows", return_value=[]):
+                                    with patch("build_bdam_simulation._write_summary"):
+                                        run_from_handoff(model_input, staging_root=root / "staging")
+
+            self.assertEqual(run_year.call_count, 3)
+            relaxation_call, spinup_call, monitored_call = run_year.call_args_list
+            self.assertEqual(relaxation_call.kwargs["phase"], "initial_relaxation")
+            self.assertIs(relaxation_call.kwargs["runtime_schedule"], relaxation_schedule)
+            np.testing.assert_array_equal(spinup_call.args[3], relaxed[0])
+            np.testing.assert_array_equal(spinup_call.args[4], relaxed[1])
+            np.testing.assert_array_equal(spinup_call.args[5], relaxed[2])
+            self.assertIs(spinup_call.kwargs["runtime_schedule"], staged_schedule)
+            np.testing.assert_array_equal(monitored_call.args[3], spun_up[0])
 
     def test_packaged_terrain_defaults_remain_synchronized(self) -> None:
         package = Path(__file__).resolve().parent

@@ -163,6 +163,36 @@ def _resample_period_values(source_edges: np.ndarray, endpoint_values: np.ndarra
     return _duration_weighted_period_means(source_edges, values[:-1], target_edges)
 
 
+def _mean_forcing_schedule(handoff: Handoff, duration_days: float) -> RuntimeSchedule:
+    """Build one transient period driven by duration-weighted annual means."""
+    if not np.isfinite(duration_days) or duration_days <= 0.0:
+        raise ValueError("Mean-forcing relaxation duration must be positive and finite.")
+    source_perlen = handoff.array("/calendar/perlen_days").ravel()
+    forcing_names = (
+        "upstream_inflow_m3_per_day", "land_recharge_m_per_day", "land_et_m_per_day",
+        "lake_precipitation_m_per_day", "lake_evaporation_m_per_day",
+    )
+    forcing = {
+        name: float(np.dot(handoff.array(f"/forcing/{name}").ravel()[:-1], source_perlen) / 365.0)
+        for name in forcing_names
+    }
+    downstream = float(np.dot(
+        handoff.array("/boundaries/downstream_control_stage_m").ravel()[:-1], source_perlen
+    ) / 365.0)
+    source_ghb = handoff.array("/boundaries/ghb/reference_head_m")
+    if source_ghb.ndim != 2 or source_ghb.shape[1] != len(source_perlen) + 1:
+        raise ValueError("GHB endpoint series does not match the source calendar.")
+    ghb = np.asarray(source_ghb[:, :-1] @ source_perlen / 365.0, dtype=float)
+    return RuntimeSchedule(
+        perlen_days=np.asarray([duration_days], dtype=float),
+        nstp=np.ones(1, dtype=int),
+        time_days=np.asarray([0.0, duration_days], dtype=float),
+        forcing={name: np.repeat(value, 2) for name, value in forcing.items()},
+        downstream_control_stage_m=np.repeat(downstream, 2),
+        ghb_reference_head_m=np.repeat(ghb[:, np.newaxis], 2, axis=1),
+    )
+
+
 def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[RuntimeSchedule, list[SpinupStep]]:
     """Build one continuous mean-forcing -> monthly -> weekly transient schedule."""
     source_perlen = handoff.array("/calendar/perlen_days").ravel()
@@ -1699,6 +1729,17 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     spinup_rows: list[dict] = []
     spinup_counts = {name: values[name] for name in spinup_names}
     if sum(spinup_counts.values()):
+        if spinup_counts["mean_forcing_spinup_years"]:
+            relaxation_schedule = _mean_forcing_schedule(pre, 7.0)
+            relaxation_ws = workspace / "spinup" / "initial_relaxation"
+            heads, stages, wc = _run_year(
+                pre_path, pre, relaxation_ws, heads, stages, wc,
+                save_monitoring=True, staging_root=Path(staging_root),
+                phase="initial_relaxation", year=1,
+                runtime_schedule=relaxation_schedule,
+                solver_profile=solver_profile,
+                save_inner_iterations=save_inner_iterations)
+            print("Completed 7-day initial relaxation with mean annual forcing.")
         schedule, metadata = _staged_spinup_schedule(pre, spinup_counts)
         spinup_ws = workspace / "spinup" / "staged"
         initial_heads, initial_stages = heads, stages
