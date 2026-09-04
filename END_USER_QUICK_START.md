@@ -193,15 +193,15 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
 
-The default sequence is one 7-day relaxation at annual-mean forcing, one
-annual-mean spinup year, one monthly spinup year, one weekly spinup year, one
+The default sequence is one 7-day relaxation at September--November-average
+forcing, one fall-average spinup year, one monthly spinup year, one weekly spinup year, one
 monitored pre-dam year, and one monitored post-dam year. The relaxation runs
-only when at least one annual-mean spinup year is configured, and its final
-groundwater, lake, and UZF state initializes the annual-mean year. A quiet
+only when at least one fall-average spinup year is configured, and its final
+groundwater, lake, and UZF state initializes the fall-average year. A quiet
 terminal is normal because MF6 output is captured. Live progress is written to
 `bdam.lst` in the active directory under `../staging`.
 
-Each annual-mean spinup year is exactly one 365-day stress period, one MODFLOW
+Each fall-average spinup year is exactly one 365-day stress period, one MODFLOW
 time step, and one saved endpoint. Each monthly year has 12 periods/steps and
 each weekly year has 52 periods/steps. Therefore a 1/1/1 spinup has 1, 12, and
 52 saved stage endpoints; a 2/1/1 spinup has 2, 12, and 52. Do not subdivide a
@@ -462,7 +462,7 @@ The factors are normalized internally to a mean of one, then multiplied by
 | `external_weir_invert_depth_m` | 0.05 | m | External LAK outlet invert below time-zero downstream stage |
 | `initial_head_channel_offset_m` | 0.25 | m | Initial groundwater head above nearest channel bed |
 | `initial_head_lateral_gradient_m_per_m` | 0.02 | m/m | Initial water-table rise away from the channel |
-| `mean_forcing_spinup_years` | 1 | years | Constant annual-mean forcing spinup years |
+| `fall_average_spinup_years` | 1 | years | Constant September--November-average forcing spinup years |
 | `monthly_spinup_years` | 1 | years | Monthly-climatology spinup years |
 | `weekly_spinup_years` | 1 | years | Weekly-climatology spinup years |
 | `pre_dam_years` | 1 | years | Monitored pre-dam years |

@@ -23,7 +23,8 @@ from build_bdam_simulation import (  # noqa: E402
     _create_staging_workspace,
     _duration_weighted_period_means,
     _execute_mf6,
-    _mean_forcing_schedule,
+    _fall_average_forcing_schedule,
+    _fall_average_period_values,
     _next_backup_path,
     _positive_integer,
     _prepare_runs_workspace,
@@ -111,36 +112,48 @@ class BDamWorkflowTests(unittest.TestCase):
             places=10,
         )
 
-    def test_initial_relaxation_is_one_week_at_annual_mean_forcing(self) -> None:
+    def test_initial_relaxation_is_one_week_at_fall_average_forcing(self) -> None:
         class FakeHandoff:
             def array(self, path: str, dtype=float) -> np.ndarray:
+                month_lengths = np.asarray(
+                    [31, 30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30], dtype=float)
+                endpoints = np.arange(13, dtype=float)
                 values = {
-                    "/calendar/perlen_days": np.asarray([100.0, 265.0]),
-                    "/forcing/upstream_inflow_m3_per_day": np.asarray([1.0, 3.0, 3.0]),
-                    "/forcing/land_recharge_m_per_day": np.asarray([2.0, 4.0, 4.0]),
-                    "/forcing/land_et_m_per_day": np.asarray([3.0, 5.0, 5.0]),
-                    "/forcing/lake_precipitation_m_per_day": np.asarray([4.0, 6.0, 6.0]),
-                    "/forcing/lake_evaporation_m_per_day": np.asarray([5.0, 7.0, 7.0]),
-                    "/boundaries/downstream_control_stage_m": np.asarray([10.0, 12.0, 12.0]),
+                    "/calendar/perlen_days": month_lengths,
+                    "/forcing/upstream_inflow_m3_per_day": endpoints + 1.0,
+                    "/forcing/land_recharge_m_per_day": endpoints + 2.0,
+                    "/forcing/land_et_m_per_day": endpoints + 3.0,
+                    "/forcing/lake_precipitation_m_per_day": endpoints + 4.0,
+                    "/forcing/lake_evaporation_m_per_day": endpoints + 5.0,
+                    "/boundaries/downstream_control_stage_m": endpoints + 10.0,
                     "/boundaries/ghb/reference_head_m": np.asarray([
-                        [20.0, 22.0, 22.0], [30.0, 34.0, 34.0],
+                        endpoints + 20.0, endpoints + 30.0,
                     ]),
                 }
                 return np.asarray(values[path], dtype=dtype)
 
-        schedule = _mean_forcing_schedule(FakeHandoff(), 7.0)
+        schedule = _fall_average_forcing_schedule(FakeHandoff(), 7.0)
         self.assertEqual(schedule.perlen_days.tolist(), [7.0])
         self.assertEqual(schedule.nstp.tolist(), [1])
         self.assertEqual(schedule.time_days.tolist(), [0.0, 7.0])
-        expected_inflow = (1.0 * 100.0 + 3.0 * 265.0) / 365.0
         np.testing.assert_allclose(
             schedule.forcing["upstream_inflow_m3_per_day"],
-            [expected_inflow, expected_inflow],
+            [5.0, 5.0],
         )
         np.testing.assert_allclose(
             schedule.ghb_reference_head_m[:, 0],
-            [(20.0 * 100.0 + 22.0 * 265.0) / 365.0,
-             (30.0 * 100.0 + 34.0 * 265.0) / 365.0],
+            [24.0, 34.0],
+        )
+
+    def test_fall_average_selects_september_october_and_november(self) -> None:
+        month_lengths = np.asarray(
+            [31, 30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30], dtype=float)
+        month_edges = np.concatenate(([0.0], np.cumsum(month_lengths)))
+        october_to_september = np.arange(1.0, 13.0)
+        endpoint_values = np.concatenate((october_to_september, [12.0]))
+        self.assertEqual(
+            _fall_average_period_values(month_edges, endpoint_values),
+            (12.0 + 1.0 + 2.0) / 3.0,
         )
 
     def test_staged_spinup_uses_exactly_one_twelve_and_fifty_two_steps_per_year(self) -> None:
@@ -164,14 +177,14 @@ class BDamWorkflowTests(unittest.TestCase):
                 return np.asarray(values[path], dtype=dtype)
 
         schedule, metadata = _staged_spinup_schedule(FakeHandoff(), {
-            "mean_forcing_spinup_years": 2,
+            "fall_average_spinup_years": 2,
             "monthly_spinup_years": 1,
             "weekly_spinup_years": 1,
         })
         self.assertEqual(len(schedule.perlen_days), 2 + 12 + 52)
         self.assertEqual(schedule.perlen_days[:2].tolist(), [365.0, 365.0])
         self.assertTrue(np.all(schedule.nstp == 1))
-        self.assertEqual(sum(step.stage == "mean_forcing" for step in metadata), 2)
+        self.assertEqual(sum(step.stage == "fall_average" for step in metadata), 2)
         self.assertEqual(sum(step.stage == "monthly" for step in metadata), 12)
         self.assertEqual(sum(step.stage == "weekly" for step in metadata), 52)
         self.assertEqual([step.stage_time_days for step in metadata[:2]], [365.0, 730.0])
@@ -296,7 +309,7 @@ class BDamWorkflowTests(unittest.TestCase):
 
             def scalar(self, path: str) -> float:
                 values = {
-                    "/mf6_parameters/mean_forcing_spinup_years": 0,
+                    "/mf6_parameters/fall_average_spinup_years": 0,
                     "/mf6_parameters/monthly_spinup_years": 0,
                     "/mf6_parameters/weekly_spinup_years": 0,
                     "/mf6_parameters/pre_dam_years": 1,
@@ -347,14 +360,14 @@ class BDamWorkflowTests(unittest.TestCase):
             self.assertEqual(written["spinup_summary.csv"], [])
             self.assertEqual(written["weekly_summary.csv"], summary_rows)
 
-    def test_mean_spinup_restarts_from_one_week_relaxation_state(self) -> None:
+    def test_fall_spinup_restarts_from_one_week_relaxation_state(self) -> None:
         class FakeHandoff:
             def __init__(self, scenario: str) -> None:
                 self.manifest = {"scenario": scenario, "time_resolution": "weekly"}
 
             def scalar(self, path: str) -> float:
                 values = {
-                    "/mf6_parameters/mean_forcing_spinup_years": 1,
+                    "/mf6_parameters/fall_average_spinup_years": 1,
                     "/mf6_parameters/monthly_spinup_years": 0,
                     "/mf6_parameters/weekly_spinup_years": 0,
                     "/mf6_parameters/pre_dam_years": 1,
@@ -383,12 +396,12 @@ class BDamWorkflowTests(unittest.TestCase):
             relaxation_schedule = object()
             staged_schedule = object()
             metadata = [type("Step", (), {
-                "phase": "spinup_mean_forcing", "stage_year": 1,
+                "phase": "spinup_fall_average", "stage_year": 1,
             })()]
 
             with patch("build_bdam_simulation.load_handoff", side_effect=[pre, post]):
                 with patch("build_bdam_simulation._default_heads", return_value=initial):
-                    with patch("build_bdam_simulation._mean_forcing_schedule",
+                    with patch("build_bdam_simulation._fall_average_forcing_schedule",
                                return_value=relaxation_schedule):
                         with patch("build_bdam_simulation._staged_spinup_schedule",
                                    return_value=(staged_schedule, metadata)):

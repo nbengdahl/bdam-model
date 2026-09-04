@@ -23,7 +23,7 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
    step and do not hand-edit `Geometry`, `ModelInput`, or `Runs`.
 7. Never add MODFLOW time steps or change the daily/weekly calendar to address
    convergence or output problems. Unless the user explicitly requests
-   sub-steps, each configured mean-forcing year has exactly 1 stress period,
+   sub-steps, each configured fall-average year has exactly 1 stress period,
    1 time step, and 1 output; each monthly year has 12; and each weekly year
    has 52. Counts scale only with configured years (for example, 2/1/1 gives
    2 annual, 12 monthly, and 52 weekly outputs). The 7-day initial relaxation
@@ -172,9 +172,9 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 Do not run this command a second time while the first process is active.
 
 The default `balanced` solver profile uses COMPLEX IMS settings for the 7-day
-mean-forcing relaxation from analytical initial conditions and faster MODERATE
+September--November-average relaxation from analytical initial conditions and faster MODERATE
 settings for restarted workspaces, with the same strict closure tolerances
-throughout. When no mean-forcing year is configured, the first requested solve
+throughout. When no fall-average year is configured, the first requested solve
 uses COMPLEX. If and only if a restarted solve reports solver convergence
 failure, rerun the
 unchanged handoffs with `--solver-profile conservative`. If MF6

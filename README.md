@@ -163,7 +163,7 @@ aquifer, forcing, and run configuration. The principal duration settings are:
 
 ```matlab
 time_resolution = "weekly";  % "weekly" or "daily"
-mf6_parameters.mean_forcing_spinup_years = 1;
+mf6_parameters.fall_average_spinup_years = 1;
 mf6_parameters.monthly_spinup_years = 1;
 mf6_parameters.weekly_spinup_years = 1;
 mf6_parameters.pre_dam_years = 1;
@@ -175,16 +175,16 @@ mf6_parameters.uzf_nwavesets = 20;
 
 Spinup always uses the pre-dam condition. Its three year counts are independent
 nonnegative integers and may all be zero. The runner never adds hidden years or
-extends spinup automatically. When at least one mean-forcing year is requested,
-the runner first solves one 7-day transient period at the same duration-weighted
-annual-mean forcing in `Runs/spinup/initial_relaxation`. Its final groundwater,
+extends spinup automatically. When at least one fall-average year is requested,
+the runner first solves one 7-day transient period at the same constant
+September--November-average forcing in `Runs/spinup/initial_relaxation`. Its final groundwater,
 lake, and UZF state initializes the continuous staged simulation in
 `Runs/spinup/staged`, which uses the configured stages in this order:
 
-1. Each mean-forcing year is one 365-day stress period with exactly one
+1. Each fall-average year is one 365-day stress period with exactly one
    MODFLOW time step and one saved annual endpoint. Inflow, atmospheric rates,
-   downstream stage, and all GHB heads stay at their duration-weighted annual
-   means.
+   downstream stage, and all GHB heads stay at the simple mean of their
+   September, October, and November monthly values.
 2. Each monthly year has 12 water-year calendar-month steps with duration-weighted monthly
    averages.
 3. Each weekly year has 52 steps of `365/52` days with weekly averages.
@@ -258,7 +258,7 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 The default `balanced` solver profile uses the robust `COMPLEX` IMS preset for
 the 7-day relaxation from analytical initial conditions, then the faster
 `MODERATE` preset for the restarted staged and monitored workspaces. If no
-mean-forcing year is configured, the first requested solve retains the robust
+fall-average year is configured, the first requested solve retains the robust
 preset. The strict head and flow closure tolerances remain unchanged. If a
 restarted solve reports a solver convergence failure,
 rerun the unchanged inputs with the conservative profile:
@@ -378,9 +378,9 @@ the reference dam line and reported as upstream Lake 1 and downstream Lake 2
 portions so the same columns are available before and after dam installation.
 
 `Runs/spinup_summary.csv` separately records the state supplied to the staged
-workspace—post-relaxation when a mean-forcing year is configured, otherwise
+workspace—post-relaxation when a fall-average year is configured, otherwise
 the analytical state—and all completed staged-spinup states and derived fluxes. Rows identify
-`spinup_mean_forcing`, `spinup_monthly`, or `spinup_weekly`, the stage year,
+`spinup_fall_average`, `spinup_monthly`, or `spinup_weekly`, the stage year,
 stage-relative time, cumulative transient time, and interval duration. With the
 default 1/1/1 settings it contains 66 rows: one initial state plus one annual,
 12 monthly, and 52 weekly completed steps. Raw head, lake, and GHB observation

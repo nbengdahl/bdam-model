@@ -25,7 +25,7 @@ import h5py
 import numpy as np
 import flopy
 
-SCHEMA = "bdam-preparation-hdf5-v3"
+SCHEMA = "bdam-preparation-hdf5-v4"
 REQUIRED_BINARY_OUTPUTS = (
     "bdam.hds", "bdam.cbc", "bdam.lak.stage", "bdam.lak.bud",
     "bdam.uzf.wc", "bdam.uzf.bud",
@@ -101,7 +101,7 @@ def _solver_settings(profile: str, save_inner_iterations: bool = False,
     }
     if profile == "balanced" and robust_initialization:
         # The first solve starts from an analytical state and may include a
-        # long mean-forcing spinup step. The packaged default requires the
+        # long fall-average spinup step. The packaged default requires the
         # robust COMPLEX preset there. Restarted annual solves use the faster
         # MODERATE preset; no physical input or closure tolerance changes.
         settings["complexity"] = "COMPLEX"
@@ -163,26 +163,40 @@ def _resample_period_values(source_edges: np.ndarray, endpoint_values: np.ndarra
     return _duration_weighted_period_means(source_edges, values[:-1], target_edges)
 
 
-def _mean_forcing_schedule(handoff: Handoff, duration_days: float) -> RuntimeSchedule:
-    """Build one transient period driven by duration-weighted annual means."""
+def _fall_average_period_values(source_edges: np.ndarray,
+                                endpoint_values: np.ndarray) -> float:
+    """Return the simple mean of September, October, and November values."""
+    month_lengths = np.asarray(
+        [31, 30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30], dtype=float)
+    month_edges = np.concatenate(([0.0], np.cumsum(month_lengths)))
+    monthly = _resample_period_values(source_edges, endpoint_values, month_edges)
+    # Monthly arrays are October--September; select Sep, Oct, Nov in that order.
+    return float(np.mean(monthly[[11, 0, 1]]))
+
+
+def _fall_average_forcing_schedule(handoff: Handoff, duration_days: float) -> RuntimeSchedule:
+    """Build one transient period driven by September--November means."""
     if not np.isfinite(duration_days) or duration_days <= 0.0:
-        raise ValueError("Mean-forcing relaxation duration must be positive and finite.")
+        raise ValueError("Fall-average relaxation duration must be positive and finite.")
     source_perlen = handoff.array("/calendar/perlen_days").ravel()
+    source_edges = np.concatenate(([0.0], np.cumsum(source_perlen)))
     forcing_names = (
         "upstream_inflow_m3_per_day", "land_recharge_m_per_day", "land_et_m_per_day",
         "lake_precipitation_m_per_day", "lake_evaporation_m_per_day",
     )
     forcing = {
-        name: float(np.dot(handoff.array(f"/forcing/{name}").ravel()[:-1], source_perlen) / 365.0)
+        name: _fall_average_period_values(
+            source_edges, handoff.array(f"/forcing/{name}").ravel())
         for name in forcing_names
     }
-    downstream = float(np.dot(
-        handoff.array("/boundaries/downstream_control_stage_m").ravel()[:-1], source_perlen
-    ) / 365.0)
+    downstream = _fall_average_period_values(
+        source_edges, handoff.array("/boundaries/downstream_control_stage_m").ravel())
     source_ghb = handoff.array("/boundaries/ghb/reference_head_m")
     if source_ghb.ndim != 2 or source_ghb.shape[1] != len(source_perlen) + 1:
         raise ValueError("GHB endpoint series does not match the source calendar.")
-    ghb = np.asarray(source_ghb[:, :-1] @ source_perlen / 365.0, dtype=float)
+    ghb = np.asarray([
+        _fall_average_period_values(source_edges, row) for row in source_ghb
+    ], dtype=float)
     return RuntimeSchedule(
         perlen_days=np.asarray([duration_days], dtype=float),
         nstp=np.ones(1, dtype=int),
@@ -194,7 +208,7 @@ def _mean_forcing_schedule(handoff: Handoff, duration_days: float) -> RuntimeSch
 
 
 def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[RuntimeSchedule, list[SpinupStep]]:
-    """Build one continuous mean-forcing -> monthly -> weekly transient schedule."""
+    """Build one continuous fall-average -> monthly -> weekly transient schedule."""
     source_perlen = handoff.array("/calendar/perlen_days").ravel()
     source_edges = np.concatenate(([0.0], np.cumsum(source_perlen)))
     source_time = handoff.array("/forcing/time_days").ravel()
@@ -215,13 +229,6 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
     month_lengths = np.asarray([31, 30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30], dtype=float)
     month_edges = np.concatenate(([0.0], np.cumsum(month_lengths)))
     week_edges = np.linspace(0.0, 365.0, 53)
-    annual_forcing = {
-        name: float(np.dot(values[:-1], source_perlen) / 365.0)
-        for name, values in source_forcing.items()
-    }
-    annual_downstream = float(np.dot(source_downstream[:-1], source_perlen) / 365.0)
-    annual_ghb = np.asarray(source_ghb[:, :-1] @ source_perlen / 365.0, dtype=float)
-
     monthly_forcing = {
         name: _resample_period_values(source_edges, values, month_edges)
         for name, values in source_forcing.items()
@@ -257,11 +264,16 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
         for endpoint in np.cumsum(perlen):
             metadata.append(SpinupStep(phase, stage, year, float((year - 1) * 365.0 + endpoint)))
 
-    mean_forcing = {name: np.asarray([value]) for name, value in annual_forcing.items()}
-    for year in range(1, counts["mean_forcing_spinup_years"] + 1):
-        append_year("mean_forcing", "spinup_mean_forcing", year, np.asarray([365.0]),
-                    mean_forcing, np.asarray([annual_downstream]),
-                    annual_ghb[:, np.newaxis])
+    fall_months = [11, 0, 1]  # September, October, November in Oct--Sep order.
+    fall_forcing = {
+        name: np.asarray([float(np.mean(values[fall_months]))])
+        for name, values in monthly_forcing.items()
+    }
+    fall_downstream = np.asarray([float(np.mean(monthly_downstream[fall_months]))])
+    fall_ghb = np.mean(monthly_ghb[:, fall_months], axis=1, keepdims=True)
+    for year in range(1, counts["fall_average_spinup_years"] + 1):
+        append_year("fall_average", "spinup_fall_average", year, np.asarray([365.0]),
+                    fall_forcing, fall_downstream, fall_ghb)
     for year in range(1, counts["monthly_spinup_years"] + 1):
         append_year("monthly", "spinup_monthly", year, month_lengths,
                     monthly_forcing, monthly_downstream, monthly_ghb)
@@ -1708,7 +1720,7 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     pre, post = load_handoff(pre_path), load_handoff(post_path)
     if pre.manifest["scenario"] != "pre_dam" or post.manifest["scenario"] != "post_dam":
         raise ValueError("Paired handoffs must be labeled pre_dam and post_dam.")
-    spinup_names = ("mean_forcing_spinup_years", "monthly_spinup_years", "weekly_spinup_years")
+    spinup_names = ("fall_average_spinup_years", "monthly_spinup_years", "weekly_spinup_years")
     values = {name: int(pre.scalar(f"/mf6_parameters/{name}")) for name in
               (*spinup_names, "pre_dam_years", "post_dam_years")}
     for name, value in values.items():
@@ -1729,8 +1741,8 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     spinup_rows: list[dict] = []
     spinup_counts = {name: values[name] for name in spinup_names}
     if sum(spinup_counts.values()):
-        if spinup_counts["mean_forcing_spinup_years"]:
-            relaxation_schedule = _mean_forcing_schedule(pre, 7.0)
+        if spinup_counts["fall_average_spinup_years"]:
+            relaxation_schedule = _fall_average_forcing_schedule(pre, 7.0)
             relaxation_ws = workspace / "spinup" / "initial_relaxation"
             heads, stages, wc = _run_year(
                 pre_path, pre, relaxation_ws, heads, stages, wc,
@@ -1739,7 +1751,7 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
                 runtime_schedule=relaxation_schedule,
                 solver_profile=solver_profile,
                 save_inner_iterations=save_inner_iterations)
-            print("Completed 7-day initial relaxation with mean annual forcing.")
+            print("Completed 7-day initial relaxation with September--November average forcing.")
         schedule, metadata = _staged_spinup_schedule(pre, spinup_counts)
         spinup_ws = workspace / "spinup" / "staged"
         initial_heads, initial_stages = heads, stages
@@ -1753,7 +1765,7 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
                                         include_initial=True, runtime_schedule=schedule,
                                         step_metadata=metadata))
         print("Completed continuous staged pre-dam spinup: "
-              f"mean-forcing years={values['mean_forcing_spinup_years']}, "
+              f"fall-average years={values['fall_average_spinup_years']}, "
               f"monthly years={values['monthly_spinup_years']}, "
               f"weekly years={values['weekly_spinup_years']}.")
 

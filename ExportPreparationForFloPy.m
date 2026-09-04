@@ -113,7 +113,7 @@ fields = fieldnames(mf6);
 for i = 1:numel(fields), writeArray(h5_path, "/mf6_parameters/" + fields{i}, mf6.(fields{i})); end
 
 manifest = struct();
-manifest.schema_version = "bdam-preparation-hdf5-v3";
+manifest.schema_version = "bdam-preparation-hdf5-v4";
 manifest.scenario = char(preparation.metadata.scenario);
 manifest.units = char(preparation.metadata.units);
 manifest.time_resolution = char(preparation.parameters.calendar.resolution);

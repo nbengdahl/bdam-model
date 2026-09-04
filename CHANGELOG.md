@@ -6,8 +6,8 @@ All notable changes to BDam will be documented in this file.
 
 ### Added
 
-- A 7-day transient initial relaxation at duration-weighted annual-mean
-  forcing now precedes configured mean-forcing spinup years. Its final
+- A 7-day transient initial relaxation at September--November-average
+  forcing now precedes configured fall-average spinup years. Its final
   groundwater, lake, and UZF state initializes the unchanged staged spinup.
 - Balanced and conservative IMS solver profiles, compact outer-iteration
   diagnostics, optional detailed inner-iteration output, and per-workspace
@@ -31,9 +31,10 @@ All notable changes to BDam will be documented in this file.
 - Representative pre-/post-dam benchmarks improved from 129.1/134.5 seconds
   and roughly 11 GB allocated to 71.7/68.7 seconds and 286--289 MB allocated,
   while retaining strict convergence tolerances.
-- Mean-forcing spinup years now use their intended single 365-day stress period,
-  time step, and output instead of twelve monthly-length periods with repeated
-  annual-mean forcing. Monthly and weekly years remain exactly 12 and 52 steps.
+- Fall-average spinup years use a single 365-day stress period, time step, and
+  output with the simple mean of the September, October, and November monthly
+  values. Monthly and weekly years remain exactly 12 and 52 steps. The renamed
+  `fall_average_spinup_years` input advances the preparation schema to v4.
 - Python requirements are now installed once for the user's selected
   persistent `python3` and reused across runs. The documented workflow no
   longer creates a separate virtual environment inside every run directory.
