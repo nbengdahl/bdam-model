@@ -22,7 +22,12 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
 6. Run the three build/run commands in the documented order. Do not skip a
    step and do not hand-edit `Geometry`, `ModelInput`, or `Runs`.
 7. Never add MODFLOW time steps or change the daily/weekly calendar to address
-   convergence or output problems.
+   convergence or output problems. Unless the user explicitly requests
+   sub-steps, each configured mean-forcing year has exactly 1 stress period,
+   1 time step, and 1 output; each monthly year has 12; and each weekly year
+   has 52. Counts scale only with configured years (for example, 2/1/1 gives
+   2 annual, 12 monthly, and 52 weekly outputs). The 7-day initial relaxation
+   remains exactly 1 stress period, 1 time step, and 1 output.
 8. Before starting MODFLOW, check for an existing `build_bdam_simulation.py`
    or `mf6` process. If another model run is active, stop and ask the user
    whether it should remain active. Do not start a duplicate run.

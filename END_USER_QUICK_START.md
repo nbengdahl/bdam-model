@@ -201,6 +201,12 @@ groundwater, lake, and UZF state initializes the annual-mean year. A quiet
 terminal is normal because MF6 output is captured. Live progress is written to
 `bdam.lst` in the active directory under `../staging`.
 
+Each annual-mean spinup year is exactly one 365-day stress period, one MODFLOW
+time step, and one saved endpoint. Each monthly year has 12 periods/steps and
+each weekly year has 52 periods/steps. Therefore a 1/1/1 spinup has 1, 12, and
+52 saved stage endpoints; a 2/1/1 spinup has 2, 12, and 52. Do not subdivide a
+spinup stage unless the user explicitly requests sub-steps.
+
 The default `balanced` solver profile uses the robust MF6 `COMPLEX` preset for
 the relaxation from analytical initial conditions and the faster `MODERATE`
 preset for restarted workspaces, always with the same strict convergence

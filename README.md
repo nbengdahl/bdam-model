@@ -181,9 +181,10 @@ annual-mean forcing in `Runs/spinup/initial_relaxation`. Its final groundwater,
 lake, and UZF state initializes the continuous staged simulation in
 `Runs/spinup/staged`, which uses the configured stages in this order:
 
-1. Each mean-forcing year has 12 water-year calendar-month steps. Inflow, atmospheric
-   rates, downstream stage, and all GHB heads stay at their duration-weighted
-   annual means even though month lengths vary.
+1. Each mean-forcing year is one 365-day stress period with exactly one
+   MODFLOW time step and one saved annual endpoint. Inflow, atmospheric rates,
+   downstream stage, and all GHB heads stay at their duration-weighted annual
+   means.
 2. Each monthly year has 12 water-year calendar-month steps with duration-weighted monthly
    averages.
 3. Each weekly year has 52 steps of `365/52` days with weekly averages.
@@ -289,14 +290,6 @@ pre-dam and 0.668 mm post-dam; lake-stage differences were below
 representative rather than performance guarantees for other hardware or
 inputs.
 
-The 7-day relaxation benchmark took 38.9 seconds and reduced the following
-continuous default 1/1/1 staged spinup from about 174 seconds to 85.2 seconds.
-Together they took 124.1 seconds, a 28.7% initialization-time reduction on the
-benchmark machine. Separately launched annual-mean, monthly, and weekly
-diagnostic workspaces took 44.3, 45.5, and 72.8 seconds; those isolated values
-include repeated process startup and finalization and therefore are not additive
-for the normal continuous staged workspace.
-
 The steps produce:
 
 1. `MakeGrid.m` → `Geometry/BDamGeometry.mat`
@@ -389,7 +382,7 @@ workspace—post-relaxation when a mean-forcing year is configured, otherwise
 the analytical state—and all completed staged-spinup states and derived fluxes. Rows identify
 `spinup_mean_forcing`, `spinup_monthly`, or `spinup_weekly`, the stage year,
 stage-relative time, cumulative transient time, and interval duration. With the
-default 1/1/1 settings it contains 77 rows: one initial state plus 12 mean,
+default 1/1/1 settings it contains 66 rows: one initial state plus one annual,
 12 monthly, and 52 weekly completed steps. Raw head, lake, and GHB observation
 CSVs and `bdam.fluxes.csv` are generated at every saved step in the staged
 spinup workspace and every pre-dam and post-dam annual workspace. Flux rates are m3/day and

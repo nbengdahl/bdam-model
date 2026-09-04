@@ -29,6 +29,7 @@ from build_bdam_simulation import (  # noqa: E402
     _prepare_runs_workspace,
     _publish_workspace,
     _solver_settings,
+    _staged_spinup_schedule,
     _validate_calendar,
     _validate_monitoring_outputs,
     _write_solver_stats,
@@ -141,6 +142,40 @@ class BDamWorkflowTests(unittest.TestCase):
             [(20.0 * 100.0 + 22.0 * 265.0) / 365.0,
              (30.0 * 100.0 + 34.0 * 265.0) / 365.0],
         )
+
+    def test_staged_spinup_uses_exactly_one_twelve_and_fifty_two_steps_per_year(self) -> None:
+        class FakeHandoff:
+            def array(self, path: str, dtype=float) -> np.ndarray:
+                perlen = np.full(52, 365.0 / 52.0)
+                endpoints = np.arange(53, dtype=float)
+                values = {
+                    "/calendar/perlen_days": perlen,
+                    "/forcing/time_days": np.linspace(0.0, 365.0, 53),
+                    "/forcing/upstream_inflow_m3_per_day": endpoints + 1.0,
+                    "/forcing/land_recharge_m_per_day": endpoints + 2.0,
+                    "/forcing/land_et_m_per_day": endpoints + 3.0,
+                    "/forcing/lake_precipitation_m_per_day": endpoints + 4.0,
+                    "/forcing/lake_evaporation_m_per_day": endpoints + 5.0,
+                    "/boundaries/downstream_control_stage_m": endpoints + 10.0,
+                    "/boundaries/ghb/reference_head_m": np.vstack((
+                        endpoints + 20.0, endpoints + 30.0,
+                    )),
+                }
+                return np.asarray(values[path], dtype=dtype)
+
+        schedule, metadata = _staged_spinup_schedule(FakeHandoff(), {
+            "mean_forcing_spinup_years": 2,
+            "monthly_spinup_years": 1,
+            "weekly_spinup_years": 1,
+        })
+        self.assertEqual(len(schedule.perlen_days), 2 + 12 + 52)
+        self.assertEqual(schedule.perlen_days[:2].tolist(), [365.0, 365.0])
+        self.assertTrue(np.all(schedule.nstp == 1))
+        self.assertEqual(sum(step.stage == "mean_forcing" for step in metadata), 2)
+        self.assertEqual(sum(step.stage == "monthly" for step in metadata), 12)
+        self.assertEqual(sum(step.stage == "weekly" for step in metadata), 52)
+        self.assertEqual([step.stage_time_days for step in metadata[:2]], [365.0, 730.0])
+        self.assertAlmostEqual(float(np.sum(schedule.perlen_days)), 4.0 * 365.0)
 
     def test_backup_path_is_timestamped_and_collision_safe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

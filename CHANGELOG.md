@@ -31,9 +31,9 @@ All notable changes to BDam will be documented in this file.
 - Representative pre-/post-dam benchmarks improved from 129.1/134.5 seconds
   and roughly 11 GB allocated to 71.7/68.7 seconds and 286--289 MB allocated,
   while retaining strict convergence tolerances.
-- The relaxation plus restarted default 1/1/1 spinup took 124.1 seconds versus
-  about 174 seconds without the relaxation, a 28.7% initialization-time
-  reduction on the benchmark machine.
+- Mean-forcing spinup years now use their intended single 365-day stress period,
+  time step, and output instead of twelve monthly-length periods with repeated
+  annual-mean forcing. Monthly and weekly years remain exactly 12 and 52 steps.
 - Python requirements are now installed once for the user's selected
   persistent `python3` and reused across runs. The documented workflow no
   longer creates a separate virtual environment inside every run directory.

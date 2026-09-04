@@ -257,11 +257,11 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
         for endpoint in np.cumsum(perlen):
             metadata.append(SpinupStep(phase, stage, year, float((year - 1) * 365.0 + endpoint)))
 
-    mean_forcing = {name: np.repeat(value, 12) for name, value in annual_forcing.items()}
+    mean_forcing = {name: np.asarray([value]) for name, value in annual_forcing.items()}
     for year in range(1, counts["mean_forcing_spinup_years"] + 1):
-        append_year("mean_forcing", "spinup_mean_forcing", year, month_lengths,
-                    mean_forcing, np.repeat(annual_downstream, 12),
-                    np.repeat(annual_ghb[:, np.newaxis], 12, axis=1))
+        append_year("mean_forcing", "spinup_mean_forcing", year, np.asarray([365.0]),
+                    mean_forcing, np.asarray([annual_downstream]),
+                    annual_ghb[:, np.newaxis])
     for year in range(1, counts["monthly_spinup_years"] + 1):
         append_year("monthly", "spinup_monthly", year, month_lengths,
                     monthly_forcing, monthly_downstream, monthly_ghb)
