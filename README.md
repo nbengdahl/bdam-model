@@ -171,8 +171,7 @@ mf6_parameters.monthly_spinup_years = 1;
 mf6_parameters.weekly_spinup_years = 1;
 mf6_parameters.pre_dam_years = 1;
 mf6_parameters.post_dam_years = 1;
-mf6_parameters.initial_head_channel_offset_m = 0.25;
-mf6_parameters.initial_head_lateral_gradient_m_per_m = 0.02;
+mf6_parameters.initial_head_channel_offset_m = 0.1;
 mf6_parameters.uzf_nwavesets = 20;
 ```
 
@@ -199,20 +198,27 @@ their source calendar-year order, while internal elapsed-time counters remain
 unchanged. All stages remain transient and preserve groundwater, lake, and UZF
 storage continuously.
 When all three counts are zero, the first monitored year starts directly from
-the configured analytical initial heads, lake stages, and UZF water content;
+the configured planar initial heads, lake stages, and UZF water content;
 no spinup workspace or `spinup_summary.csv` is produced. Otherwise, the final
 staged state initializes the first pre-dam year exactly. Spinup always
 ends at weekly resolution when a weekly stage is requested, even when monitored
 years use daily resolution. The monitored duration is `pre_dam_years +
 post_dam_years`; set `post_dam_years = 0` for a no-dam run.
-The initial groundwater surface is anchored 0.25 m above the nearest channel
-bed and rises laterally at 0.02 m/m by default. It is capped at land surface
-and then reduced linearly moving upslope from the outlet. The reduction gradient
-is derived automatically as half the absolute `channel_longitudinal_slope` in
-the geometry database; changing that existing geometry input therefore changes
-the initial-head correction without adding another user control. The result is
-bounded above the model bottom and applied as one hydraulic head through each
-vertical column. The channel offset and lateral gradient remain user-editable.
+The initial groundwater surface is a plane with the signed regional longitudinal
+slope from the geometry database. At the downstream grid edge, it is anchored
+0.1 m above the lowest channel cell. It is constant transversely and uses the
+same head through each vertical column. There is no lateral rise, upslope
+correction, or land-surface clipping. A plane at regional grade cannot remain
+exactly 0.1 m above every channel cell when the channel has a different grade;
+the offset is defined at the downstream channel bottom. The handoff exports
+`initial_head_regional_slope_m_per_m` automatically from the geometry.
+Regenerate both handoffs with `MakeInputs.m` after updating older packages.
+
+To test initial conditions only through the configured monthly spinup, use
+`--stop-after-monthly-spinup`. This retains the relaxation and annual/monthly
+steps exactly, writes validated spinup outputs and `spinup_summary.csv`, and
+stops before weekly spinup and monitored years. It requires a nonzero monthly
+spinup count. Omit the flag for the complete configured model run.
 
 At dam installation, groundwater heads are carried forward without changing
 lake-footprint cells. UZF water contents are mapped by grid cell, with the
@@ -378,7 +384,7 @@ portions so the same columns are available before and after dam installation.
 
 `Runs/spinup_summary.csv` separately records the state supplied to the staged
 workspace—post-relaxation when a fall-average year is configured, otherwise
-the analytical state—and all completed staged-spinup states and derived fluxes. Rows identify
+the planar state—and all completed staged-spinup states and derived fluxes. Rows identify
 `spinup_fall_average`, `spinup_monthly`, or `spinup_weekly`, the stage year,
 stage-relative time, cumulative transient time, and interval duration. With the
 default 1/1/1 settings it contains 66 rows: one initial state plus one annual,

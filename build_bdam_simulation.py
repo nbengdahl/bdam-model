@@ -100,7 +100,7 @@ def _solver_settings(profile: str, save_inner_iterations: bool = False,
         "csv_outer_output_filerecord": SOLVER_OUTER_OUTPUT,
     }
     if profile == "balanced" and robust_initialization:
-        # The first solve starts from an analytical state and may include a
+        # The first solve starts from a planar state and may include a
         # long fall-average spinup step. The packaged default requires the
         # robust COMPLEX preset there. Restarted annual solves use the faster
         # MODERATE preset; no physical input or closure tolerance changes.
@@ -396,8 +396,7 @@ def _required(h: Handoff) -> None:
         "/mf6_parameters/uzf_thtr", "/mf6_parameters/uzf_ntrailwaves",
         "/mf6_parameters/uzf_nwavesets", "/monitoring/head_points_requested_xy_layer",
         "/mf6_parameters/initial_head_channel_offset_m",
-        "/mf6_parameters/initial_head_lateral_gradient_m_per_m",
-        "/mf6_parameters/initial_head_upslope_reduction_m_per_m",
+        "/mf6_parameters/initial_head_regional_slope_m_per_m",
         "/monitoring/head_points_resolved_i_x", "/monitoring/head_points_resolved_i_y",
         "/monitoring/head_points_resolved_layer_top_down", "/monitoring/head_points_resolved_xy",
         "/validation_zones/upstream_mask", "/validation_zones/downstream_mask",
@@ -743,9 +742,9 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
     flopy.mf6.ModflowGwfdis(gwf, length_units="METERS", nlay=nlay, nrow=nrow, ncol=ncol,
                              delr=float(h.scalar("/grid/dx_m")), delc=float(h.scalar("/grid/dy_m")), top=top, botm=botm)
     lakes = _lake_data(h, nlay, nrow)
-    # New runs use the same analytical water table as the multi-year runner;
+    # New runs use the same planar water table as the multi-year runner;
     # restarts preserve every simulated groundwater head unchanged.
-    strt = initial_heads if initial_heads is not None else _analytical_initial_heads(h)
+    strt = initial_heads if initial_heads is not None else _planar_initial_heads(h)
     if np.asarray(strt).shape != (nlay, nrow, ncol):
         raise ValueError("Initial-head array does not match the MF6 grid.")
     flopy.mf6.ModflowGwfic(gwf, strt=strt)
@@ -1445,60 +1444,36 @@ def _write_summary(path: Path, rows: list[dict]) -> None:
         writer = csv.DictWriter(stream, fieldnames=fields); writer.writeheader(); writer.writerows(rows)
 
 
-def _analytical_initial_heads(handoff: Handoff) -> np.ndarray:
-    """Create a bounded water table with lateral rise and an upslope head correction."""
+def _planar_initial_heads(handoff: Handoff) -> np.ndarray:
+    """Extend the regional grade from the downstream channel bottom plus offset."""
     top = mf2(handoff.array("/grid/ZTop"))
-    x = mf2(handoff.array("/grid/X"))
-    y = mf2(handoff.array("/grid/Y"))
     channel = mf2(handoff.array("/surface_water/channel_mask", bool))
-    z = handoff.array("/grid/Z")
-    nlay = z.shape[2] - 1
-    bottom = mf3(z[:, :, :-1])[-1]
-    if x.shape != top.shape or y.shape != top.shape or channel.shape != top.shape or not np.any(channel):
-        raise ValueError("Analytical initial heads require matching grid coordinates and a nonempty channel mask.")
-    channel_xy = np.column_stack((x[channel], y[channel]))
-    channel_bed = top[channel]
-    points = np.column_stack((x.ravel(), y.ravel()))
-    nearest_bed = np.empty(points.shape[0], dtype=float)
-    nearest_distance = np.empty(points.shape[0], dtype=float)
-    # Chunking avoids a grid-by-channel temporary array for large user grids.
-    for start in range(0, points.shape[0], 4096):
-        stop = min(start + 4096, points.shape[0])
-        delta = points[start:stop, np.newaxis, :] - channel_xy[np.newaxis, :, :]
-        distance2 = np.sum(delta * delta, axis=2)
-        nearest = np.argmin(distance2, axis=1)
-        nearest_bed[start:stop] = channel_bed[nearest]
-        nearest_distance[start:stop] = np.sqrt(distance2[np.arange(stop - start), nearest])
-    offset = handoff.scalar("/mf6_parameters/initial_head_channel_offset_m")
-    gradient = handoff.scalar("/mf6_parameters/initial_head_lateral_gradient_m_per_m")
-    upslope_reduction = handoff.scalar("/mf6_parameters/initial_head_upslope_reduction_m_per_m")
-    if offset < 0.0 or gradient < 0.0 or upslope_reduction < 0.0:
-        raise ValueError("Analytical initial-head parameters must be nonnegative.")
-    surface = (nearest_bed + offset + gradient * nearest_distance).reshape(top.shape)
-    lower_bound = bottom + np.maximum(1.0e-6, (top - bottom) * 1.0e-9)
-    surface = np.minimum(top, np.maximum(surface, lower_bound))
     direction = handoff.manifest.get("longitudinal_direction")
-    if direction == "y":
-        first_mean, last_mean = float(np.mean(top[0, :])), float(np.mean(top[-1, :]))
-        outlet_coordinate = float(np.mean(y[0, :] if first_mean <= last_mean else y[-1, :]))
-        longitudinal_coordinate = y
-    elif direction == "x":
-        first_mean, last_mean = float(np.mean(top[:, 0])), float(np.mean(top[:, -1]))
-        outlet_coordinate = float(np.mean(x[:, 0] if first_mean <= last_mean else x[:, -1]))
-        longitudinal_coordinate = x
-    else:
-        raise ValueError("Analytical initial heads require longitudinal_direction 'x' or 'y'.")
-    distance_upslope = np.abs(longitudinal_coordinate - outlet_coordinate)
-    if np.any(~np.isfinite(distance_upslope)):
-        raise ValueError("Longitudinal distance from the outlet is non-finite.")
-    surface = np.minimum(top, np.maximum(surface - upslope_reduction * distance_upslope, lower_bound))
-    if not np.all(np.isfinite(surface)) or np.any(surface > top) or np.any(surface <= bottom):
-        raise RuntimeError("Analytical initial water table is non-finite or outside the model bounds.")
-    return np.repeat(surface[np.newaxis, :, :], nlay, axis=0)
+    if direction not in ("x", "y"):
+        raise ValueError("Initial-head plane requires longitudinal_direction 'x' or 'y'.")
+    coordinate = mf2(handoff.array(f"/grid/{direction.upper()}"))
+    z = handoff.array("/grid/Z")
+    bottom = mf3(z[:, :, :-1])[-1]
+    if coordinate.shape != top.shape or channel.shape != top.shape or not np.any(channel):
+        raise ValueError("Initial-head plane requires matching coordinates and a nonempty channel mask.")
+    slope = handoff.scalar("/mf6_parameters/initial_head_regional_slope_m_per_m")
+    offset = handoff.scalar("/mf6_parameters/initial_head_channel_offset_m")
+    if not np.isfinite(slope) or not np.isfinite(offset) or offset < 0:
+        raise ValueError("Initial-head slope must be finite and offset finite and nonnegative.")
+    outlet = float(np.min(coordinate) if slope >= 0 else np.max(coordinate))
+    outlet_channel = channel & np.isclose(coordinate, outlet, rtol=0.0, atol=1.0e-8)
+    if not np.any(outlet_channel):
+        raise ValueError("Initial-head plane requires channel cells on the downstream grid edge.")
+    channel_bottom = float(np.min(top[outlet_channel]))
+    surface = channel_bottom + offset + slope * (coordinate - outlet)
+    # Do not clip to terrain: clipping would destroy the requested plane.
+    if not np.all(np.isfinite(surface)) or np.any(surface <= bottom):
+        raise ValueError("Initial-head plane must be finite and above the model bottom.")
+    return np.repeat(surface[np.newaxis, :, :], z.shape[2] - 1, axis=0)
 
 
 def _default_heads(handoff: Handoff) -> np.ndarray:
-    return _analytical_initial_heads(handoff)
+    return _planar_initial_heads(handoff)
 
 
 def _map_uzf_state(source: Handoff, target: Handoff, source_wc: np.ndarray | None) -> np.ndarray | None:
@@ -1753,7 +1728,8 @@ def _resolve_handoffs(path: str | Path) -> tuple[Path, Path, Path]:
 
 def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
                      solver_profile: str = "balanced",
-                     save_inner_iterations: bool = False) -> None:
+                     save_inner_iterations: bool = False,
+                     stop_after_monthly_spinup: bool = False) -> None:
     """Spin up pre-dam conditions, then run the configured pre-/post-dam years."""
     if solver_profile != "balanced":
         raise ValueError(
@@ -1776,6 +1752,8 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
             raise ValueError(f"Paired handoffs have an invalid or inconsistent {name} value.")
     if values["pre_dam_years"] + values["post_dam_years"] < 1:
         raise ValueError("At least one monitored pre- or post-dam year is required.")
+    if stop_after_monthly_spinup and not values["monthly_spinup_years"]:
+        raise ValueError("Stopping after monthly spinup requires a configured monthly year.")
     backup = _prepare_runs_workspace(workspace)
     if backup is not None:
         print(f"Archived existing run outputs at {backup}.")
@@ -1787,6 +1765,8 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     stages = wc = None
     spinup_rows: list[dict] = []
     spinup_counts = {name: values[name] for name in spinup_names}
+    if stop_after_monthly_spinup:
+        spinup_counts["weekly_spinup_years"] = 0
     if sum(spinup_counts.values()):
         if spinup_counts["fall_average_spinup_years"]:
             relaxation_schedule = _fall_average_forcing_schedule(pre, 7.0)
@@ -1830,7 +1810,12 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
         print("Completed continuous staged pre-dam spinup: "
               f"fall-average years={values['fall_average_spinup_years']}, "
               f"monthly years={values['monthly_spinup_years']}, "
-              f"weekly years={values['weekly_spinup_years']}.")
+              f"weekly years={spinup_counts['weekly_spinup_years']}.")
+
+    if stop_after_monthly_spinup:
+        _write_summary(workspace / "spinup_summary.csv", spinup_rows)
+        print("Diagnostic run completed at the end of monthly spinup.")
+        return
 
     rows: list[dict] = []
     first_annual_pending = not bool(sum(spinup_counts.values()))
@@ -1882,10 +1867,13 @@ def main() -> None:
                         help="IMS profile for solves after the first 365-day annual solve")
     parser.add_argument("--solver-inner-output", action="store_true",
                         help="also save detailed inner-iteration CSV diagnostics")
+    parser.add_argument("--stop-after-monthly-spinup", action="store_true",
+                        help="validate initial conditions through monthly spinup, then stop")
     args = parser.parse_args()
     run_from_handoff(args.handoff, staging_root=args.staging_root,
                      solver_profile=args.solver_profile,
-                     save_inner_iterations=args.solver_inner_output)
+                     save_inner_iterations=args.solver_inner_output,
+                     stop_after_monthly_spinup=args.stop_after_monthly_spinup)
 
 
 if __name__ == "__main__":

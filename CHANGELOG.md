@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Replace the nearest-channel initial head field with a regional-slope plane,
+  anchored 0.1 m above the downstream channel bottom; remove lateral rise,
+  upslope correction, and terrain clipping. Regenerate older HDF5 handoffs.
+- Add `--stop-after-monthly-spinup` for initial-condition diagnostics without
+  running weekly spinup or monitored years.
+- Test all fall forcing averages against their September/October/November
+  monthly values and the relaxation forcing, plus signed X/Y initial planes.
+
+
 All notable changes to BDam will be documented in this file.
 
 ## Unreleased

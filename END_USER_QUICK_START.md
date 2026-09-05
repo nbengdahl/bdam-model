@@ -207,8 +207,14 @@ each weekly year has 52 periods/steps. Therefore a 1/1/1 spinup has 1, 12, and
 52 saved stage endpoints; a 2/1/1 spinup has 2, 12, and 52. Do not subdivide a
 spinup stage unless the user explicitly requests sub-steps.
 
+For an initial-condition diagnostic, append `--stop-after-monthly-spinup` to
+the Python command. It completes the configured annual and monthly spinup,
+writes validated spinup outputs, and stops before weekly spinup and monitored
+years. A monthly spinup year must be configured. Omit the flag for a full run;
+the runner preserves the diagnostic outputs in its usual timestamped backup.
+
 The runner uses robust MF6 `COMPLEX` settings for the relaxation from
-analytical initial conditions and for only the first 365-day annual solve.
+planar initial conditions and for only the first 365-day annual solve.
 That annual solve uses the `conservative` profile. Every remaining staged
 spinup and monitored solve returns to the faster `balanced` profile and its
 `MODERATE` preset, always with the same strict convergence tolerances. With no
@@ -459,8 +465,8 @@ The factors are normalized internally to a mean of one, then multiplied by
 | `uzf_ntrailwaves` | 7 | count | UZF trailing-wave numerical capacity |
 | `uzf_nwavesets` | 20 | count | UZF wave-set numerical capacity; increase to 40 if MF6 reports insufficient capacity |
 | `external_weir_invert_depth_m` | 0.05 | m | External LAK outlet invert below time-zero downstream stage |
-| `initial_head_channel_offset_m` | 0.25 | m | Initial groundwater head above nearest channel bed |
-| `initial_head_lateral_gradient_m_per_m` | 0.02 | m/m | Initial water-table rise away from the channel |
+| `initial_head_channel_offset_m` | 0.1 | m | Initial plane above the lowest channel cell at the downstream grid edge |
+| `initial_head_regional_slope_m_per_m` | from geometry | m/m | Automatically exported signed regional slope; initial plane is constant transversely |
 | `fall_average_spinup_years` | 1 | years | Constant September--November-average forcing spinup years |
 | `monthly_spinup_years` | 1 | years | Monthly-climatology spinup years |
 | `weekly_spinup_years` | 1 | years | Weekly-climatology spinup years |

@@ -171,7 +171,7 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 
 Do not run this command a second time while the first process is active.
 
-The 7-day September--November-average relaxation from analytical initial
+The 7-day September--November-average relaxation from planar initial
 conditions uses the robust COMPLEX initialization settings. The runner then
 uses the `conservative` profile only for the first 365-day annual run and
 returns to the faster `balanced` profile for every subsequent run,

@@ -21,6 +21,8 @@ from build_bdam_simulation import (  # noqa: E402
     SOLVER_OUTER_OUTPUT,
     SOLVER_STATS_OUTPUT,
     _create_staging_workspace,
+    _planar_initial_heads,
+    mf2,
     _duration_weighted_period_means,
     _execute_mf6,
     _fall_average_forcing_schedule,
@@ -41,6 +43,34 @@ from build_bdam_simulation import (  # noqa: E402
 
 
 class BDamWorkflowTests(unittest.TestCase):
+    def test_initial_plane_preserves_signed_regional_slope_and_channel_offset(self) -> None:
+        for direction in ("x", "y"):
+            for slope in (-0.005, 0.0, 0.005):
+                with self.subTest(direction=direction, slope=slope):
+                    x, y = np.meshgrid(np.arange(4.0), np.arange(5.0), indexing="ij")
+                    coordinate = x if direction == "x" else y
+                    transverse = y if direction == "x" else x
+                    top = 10.0 + slope * coordinate + (transverse - 1.0) ** 2
+                    channel = transverse == 1.0
+                    arrays = {"/grid/X": x, "/grid/Y": y, "/grid/ZTop": top,
+                              "/surface_water/channel_mask": channel,
+                              "/grid/Z": np.stack((top - 10, top - 5, top), axis=2)}
+
+                    class FakeHandoff:
+                        manifest = {"longitudinal_direction": direction}
+
+                        def array(self, path, dtype=float):
+                            return np.asarray(arrays[path], dtype=dtype)
+
+                        def scalar(self, path):
+                            return slope if "regional_slope" in path else 0.1
+
+                    heads = _planar_initial_heads(FakeHandoff())
+                    expected = mf2(10.1 + slope * coordinate)
+                    np.testing.assert_allclose(heads, np.repeat(expected[None], 2, axis=0))
+                    # A cap at land surface would erase the channel offset.
+                    np.testing.assert_allclose((heads[0] - mf2(top))[mf2(channel)], 0.1)
+
     def test_solver_profiles_preserve_strict_tolerances(self) -> None:
         balanced = _solver_settings("balanced")
         balanced_initial = _solver_settings("balanced", robust_initialization=True)
@@ -182,6 +212,15 @@ class BDamWorkflowTests(unittest.TestCase):
             "monthly_spinup_years": 1,
             "weekly_spinup_years": 1,
         })
+        relaxation = _fall_average_forcing_schedule(FakeHandoff(), 7.0)
+        for name, values in schedule.forcing.items():
+            expected = np.mean(values[[13, 2, 3]])  # Sep, Oct, Nov monthly periods.
+            np.testing.assert_allclose(values[:2], expected)
+            np.testing.assert_allclose(relaxation.forcing[name], expected)
+        np.testing.assert_allclose(schedule.ghb_reference_head_m[:, :2],
+                                   relaxation.ghb_reference_head_m)
+        np.testing.assert_allclose(schedule.downstream_control_stage_m[:2],
+                                   relaxation.downstream_control_stage_m)
         self.assertEqual(len(schedule.perlen_days), 2 + 12 + 52)
         self.assertEqual(schedule.perlen_days[:2].tolist(), [365.0, 365.0])
         self.assertTrue(np.all(schedule.nstp == 1))
@@ -371,7 +410,13 @@ class BDamWorkflowTests(unittest.TestCase):
             self.assertEqual(written["spinup_summary.csv"], [])
             self.assertEqual(written["weekly_summary.csv"], summary_rows)
 
+    def test_monthly_diagnostic_stops_before_weekly_and_monitored_years(self) -> None:
+        self._check_fall_spinup_restart(stop_after_monthly=True)
+
     def test_fall_spinup_restarts_from_one_week_relaxation_state(self) -> None:
+        self._check_fall_spinup_restart(stop_after_monthly=False)
+
+    def _check_fall_spinup_restart(self, stop_after_monthly: bool) -> None:
         class FakeHandoff:
             def __init__(self, scenario: str) -> None:
                 self.manifest = {"scenario": scenario, "time_resolution": "weekly"}
@@ -421,7 +466,7 @@ class BDamWorkflowTests(unittest.TestCase):
                     with patch("build_bdam_simulation._fall_average_forcing_schedule",
                                return_value=relaxation_schedule):
                         with patch("build_bdam_simulation._staged_spinup_schedule",
-                                   return_value=(complete_schedule, metadata)):
+                                   return_value=(complete_schedule, metadata)) as staged_schedule:
                             with patch("build_bdam_simulation._split_first_spinup_year",
                                        return_value=(first_schedule, metadata,
                                                      remaining_schedule, remaining_metadata)):
@@ -430,8 +475,15 @@ class BDamWorkflowTests(unittest.TestCase):
                                                         monitored]) as run_year:
                                     with patch("build_bdam_simulation._period_rows", return_value=[]):
                                         with patch("build_bdam_simulation._write_summary"):
-                                            run_from_handoff(model_input, staging_root=root / "staging")
+                                            run_from_handoff(model_input, staging_root=root / "staging",
+                                                             stop_after_monthly_spinup=stop_after_monthly)
 
+            self.assertEqual(staged_schedule.call_args.args[1]["weekly_spinup_years"],
+                             0 if stop_after_monthly else 1)
+            if stop_after_monthly:
+                self.assertEqual(run_year.call_count, 3)
+                self.assertEqual(run_year.call_args.kwargs["phase"], "spinup_remainder")
+                return
             self.assertEqual(run_year.call_count, 4)
             relaxation_call, first_call, remainder_call, monitored_call = run_year.call_args_list
             self.assertEqual(relaxation_call.kwargs["phase"], "initial_relaxation")
