@@ -70,6 +70,17 @@ clear cleanup
 testCase.verifyError(@()BDamMF6HeadReader(path),"BDam:HeadFileLayers");
 end
 
+function testInitialHeadReaderUsesUppermostValidHeadAndNativeOrientation(testCase)
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+path = fullfile(folder.Folder,"bdam.ic");
+top = [1 -1.0e30;3 NaN;5 6];
+bottom = [10 20;30 40;50 60];
+writeInitialConditions(path,cat(3,top,bottom));
+
+surface = readBDamMF6InitialWaterSurface(path,3,2,2);
+testCase.verifyEqual(surface,[1 20;3 40;5 6]);
+end
+
 function testLoaderRejectsIncompleteOutputRoot(testCase)
 folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
 testCase.verifyError(@()loadBDamResults(folder.Folder),"BDam:ResultsGeometry");
@@ -87,6 +98,31 @@ testCase.verifyEqual(results.Scopes.All.Frames,results.Scopes.Monitored.Frames);
 testCase.verifyEqual(results.Scopes.All.Summary,results.Scopes.Monitored.Summary);
 testCase.verifyEqual(results.Scopes.All.StartDay,0,"AbsTol",1.0e-12);
 testCase.verifyEqual(results.Scopes.All.EndDay,14,"AbsTol",1.0e-12);
+testCase.verifyEqual(height(results.Scopes.Monitored.Frames),3);
+testCase.verifyEqual(results.Scopes.Monitored.Frames.LocalFrame,[0;1;2]);
+testCase.verifyEqual(results.Scopes.Monitored.Frames.TimeDays,[0;7;14], ...
+    "AbsTol",1.0e-12);
+testCase.verifyEqual(results.InitialSurfaces{1},0.5*ones(2));
+end
+
+function testWeeklyYearHasInitialConditionPlus52Outputs(testCase)
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+root = createZeroSpinupFixture(folder.Folder);
+workspace = fullfile(root,"Runs","pre_dam","year_01");
+times = (365/52)*(1:52)';
+values = repmat(reshape(1:52,1,1,1,52),2,2,1,1);
+writeHeadFile(fullfile(workspace,"bdam.hds"),times,values);
+summary = table(repmat("pre_dam",53,1),ones(53,1), ...
+    ["initial";repmat("completed_step",52,1)],[0;times],[0;times], ...
+    [0;times],VariableNames=["phase","phase_year","event","time_days", ...
+    "phase_time_days","head_test_m"]);
+writetable(summary,fullfile(root,"Runs","weekly_summary.csv"));
+
+results = loadBDamResults(root);
+testCase.verifyEqual(height(results.Scopes.Monitored.Frames),53);
+testCase.verifyEqual(results.Scopes.Monitored.Frames.TimeDays,[0;times], ...
+    "AbsTol",1.0e-10);
+testCase.verifyEqual(results.Scopes.Monitored.Frames.LocalFrame,(0:52)');
 end
 
 function testLoaderRejectsHalfPresentSpinupOutput(testCase)
@@ -112,6 +148,8 @@ writetable(targets,fullfile(remainderWorkspace,"monitoring_targets.csv"));
 writeHeadFile(fullfile(firstWorkspace,"bdam.hds"),365,3*ones(2));
 writeHeadFile(fullfile(remainderWorkspace,"bdam.hds"),[30 60], ...
     cat(4,4*ones(2),5*ones(2)));
+writeInitialConditions(fullfile(firstWorkspace,"bdam.ic"),2*ones(2));
+writeInitialConditions(fullfile(remainderWorkspace,"bdam.ic"),3*ones(2));
 summary = table( ...
     ["spinup_fall_average";"spinup_fall_average";"spinup_monthly";"spinup_monthly"], ...
     [1;1;1;1],["initial";"completed_step";"completed_step";"completed_step"], ...
@@ -124,8 +162,9 @@ writetable(summary,fullfile(root,"Runs","spinup_summary.csv"));
 results = loadBDamResults(root);
 testCase.verifyTrue(results.HasSpinup);
 testCase.verifyEqual(results.SpinupDurationDays,425,"AbsTol",1.0e-12);
-testCase.verifyEqual(results.Scopes.Spinup.Frames.ReaderIndex,[1;2;2]);
-testCase.verifyEqual(results.Scopes.Spinup.Frames.TimeDays,[365;395;425], ...
+testCase.verifyEqual(results.Scopes.Spinup.Frames.ReaderIndex,[1;1;2;2]);
+testCase.verifyEqual(results.Scopes.Spinup.Frames.LocalFrame,[0;1;1;2]);
+testCase.verifyEqual(results.Scopes.Spinup.Frames.TimeDays,[0;365;395;425], ...
     "AbsTol",1.0e-12);
 testCase.verifyEqual(results.Scopes.All.EndDay,439,"AbsTol",1.0e-12);
 end
@@ -166,7 +205,7 @@ testCase.assertNotEmpty(scopeDropdown);
 testCase.verifyEqual(string(scopeDropdown.Value),"Monitored");
 testCase.verifyFalse(any(string(scopeDropdown.ItemsData) == "Spinup"));
 slider = findall(app.UIFigure,"Type","uislider");
-testCase.verifyEqual(slider.Limits,[0 1]);
+testCase.verifyEqual(slider.Limits,[0 2]);
 testCase.verifyEqual(slider.Value,0);
 slider.Value = 1;
 feval(slider.ValueChangedFcn,slider,[]);
@@ -174,7 +213,7 @@ slider.Value = 0;
 feval(slider.ValueChangedFcn,slider,[]);
 labels = findall(app.UIFigure,"Type","uilabel");
 testCase.verifyTrue(any(arrayfun(@(label)contains(string(label.Text), ...
-    "Frame 0/1"),labels)));
+    "Frame 0/2"),labels)));
 clear cleanup
 end
 
@@ -185,19 +224,21 @@ testCase.assumeTrue(isfile(fullfile(root,"Runs","weekly_summary.csv")), ...
     "The optional completed BDam_out integration fixture is unavailable.");
 
 results = loadBDamResults(root);
-testCase.verifyEqual(height(results.Scopes.Monitored.Frames),104);
-testCase.verifyEqual(height(results.Scopes.All.Frames),180);
+testCase.verifyEqual(height(results.Scopes.Monitored.Frames),105);
+testCase.verifyEqual(height(results.Scopes.All.Frames),181);
 testCase.verifyEqual(results.Scopes.Monitored.EndDay,730,"AbsTol",1.0e-8);
 testCase.verifyEqual(results.Scopes.All.EndDay,1825,"AbsTol",1.0e-8);
 
-firstFrame = results.Scopes.Monitored.Frames(1,:);
+testCase.verifyEqual(results.Scopes.Monitored.Frames.TimeDays(1),0,"AbsTol",1.0e-12);
+testCase.verifyEqual(results.Scopes.Monitored.Frames.LocalFrame(1),0);
 target = results.Targets(1,:);
+variable = target.name+"_m";
+firstFrame = results.Scopes.Monitored.Frames(2,:);
 layer = target.resolved_layer_top_down;
 heads = results.Readers{firstFrame.ReaderIndex}.readLayer(firstFrame.LocalFrame,layer);
 observed = heads(target.resolved_i_x,target.resolved_i_y);
 summary = results.Scopes.Monitored.Summary;
 row = find(summary.event == "completed_step",1);
-variable = target.name+"_m";
 testCase.verifyEqual(observed,summary.(variable)(row),"AbsTol",1.0e-10);
 end
 
@@ -277,6 +318,7 @@ save(fullfile(geometryPath,"BDamGeometry.mat"),"X","Y","ZTop","geometry_handoff"
 first = ones(2);
 second = 2*ones(2);
 writeHeadFile(fullfile(workspace,"bdam.hds"),[7 14],cat(4,first,second));
+writeInitialConditions(fullfile(workspace,"bdam.ic"),0.5*ones(2));
 targets = table("head_test",1,1, ...
     VariableNames=["name","resolved_x_m","resolved_y_m"]);
 writetable(targets,fullfile(workspace,"monitoring_targets.csv"));
@@ -285,6 +327,24 @@ summary = table(["pre_dam";"pre_dam";"pre_dam"],[1;1;1], ...
     [1;1;2],VariableNames=["phase","phase_year","event","time_days", ...
     "phase_time_days","head_test_m"]);
 writetable(summary,fullfile(root,"Runs","weekly_summary.csv"));
+end
+
+function writeInitialConditions(path,values)
+% VALUES is [ncol,nrow,nlay] in BDam native [x,y] orientation.
+dimensions = size(values);
+dimensions(end+1:3) = 1;
+fileID = fopen(path,"w");
+cleanup = onCleanup(@()fclose(fileID));
+fprintf(fileID,"BEGIN griddata\n  strt  LAYERED\n");
+for layer = 1:dimensions(3)
+    fprintf(fileID,"    INTERNAL  FACTOR  1.0\n");
+    mf6Rows = fliplr(values(:,:,layer))';
+    for row = 1:dimensions(2)
+        fprintf(fileID," %.17g",mf6Rows(row,:));
+        fprintf(fileID,"\n");
+    end
+end
+fprintf(fileID,"END griddata\n");
 end
 
 function writeHeader(fileID,kstp,kper,pertim,totim,label,ncol,nrow,layer)

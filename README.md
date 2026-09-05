@@ -139,9 +139,12 @@ LaunchBDamResultsViewerApp("/absolute/path/to/completed/BDam")
 ```
 
 The selected root must contain `Geometry/BDamGeometry.mat`, `Runs/`, the run
-summary CSVs, annual or staged `bdam.hds` files, and their
+summary CSVs, and each annual or staged workspace's `bdam.ic`, `bdam.hds`, and
 `monitoring_targets.csv` files. The viewer reads these files without changing
-them. Spinup files are optional when all three configured spinup counts were
+them. Frame zero is the actual initial condition from `bdam.ic`; each saved
+end-of-step head is the following frame. A 52-week simulation therefore has
+53 frames spanning day zero through the end of week 52. Spinup files are
+optional when all three configured spinup counts were
 zero; in that case the viewer offers only the monitored and all scopes, with
 no timeline offset. Its upper panel plots selected monitoring series on at most two y-axis
 unit families. A compact lower-panel assignment matrix independently chooses

@@ -82,6 +82,7 @@ if ~any(string({workspaceDefinitions.Phase}) ~= "spinup")
 end
 
 readers = cell(numel(workspaceDefinitions),1);
+initialSurfaces = cell(numel(workspaceDefinitions),1);
 targetReference = table();
 for index = 1:numel(workspaceDefinitions)
     workspace = workspaceDefinitions(index);
@@ -99,6 +100,9 @@ for index = 1:numel(workspaceDefinitions)
             "Head grid in %s does not match Geometry/BDamGeometry.mat.", ...
             workspace.Path);
     end
+    initialSurfaces{index} = readBDamMF6InitialWaterSurface( ...
+        fullfile(workspace.Path,"bdam.ic"),readers{index}.NumColumns, ...
+        readers{index}.NumRows,readers{index}.NumLayers);
     targets = normalizeTargets(readtable(targetPath,"VariableNamingRule","preserve"));
     if isempty(targetReference)
         targetReference = targets;
@@ -118,7 +122,10 @@ if hasSpinupHeads
     allMonitoredSummary = monitoredSummary;
     allMonitoredSummary.time_days = allMonitoredSummary.time_days+spinupDuration;
     allSummary = verticallyConcatenateSummaries(spinupSummary,allMonitoredSummary);
-    allMonitoredFrames = monitoredFrames;
+    % The monitored initial state is the same continuous state as the final
+    % spinup frame, so keep it in the Monitored scope but do not duplicate it
+    % at the Spinup/Monitored boundary of the All scope.
+    allMonitoredFrames = monitoredFrames(2:end,:);
     allMonitoredFrames.TimeDays = allMonitoredFrames.TimeDays+spinupDuration;
     allFrames = [spinupFrames;allMonitoredFrames];
     scopes.Spinup = makeScope("Spinup",spinupSummary,spinupFrames);
@@ -137,6 +144,7 @@ results.X = geometry.X;
 results.Y = geometry.Y;
 results.ZTop = geometry.ZTop;
 results.Readers = readers;
+results.InitialSurfaces = initialSurfaces;
 results.Workspaces = workspaceDefinitions;
 results.Targets = targetReference;
 results.Scopes = scopes;
@@ -245,6 +253,15 @@ frames = table([],[],[],strings(0,1),[],[], ...
     "PhaseYear","PhaseTimeDays"]);
 duration = 0;
 cursor = 1;
+firstReader = find(string({definitions.Phase}) == "spinup",1);
+initialRow = find(summary.event == "initial",1);
+if isempty(firstReader) || isempty(initialRow)
+    error("BDam:ResultsAlignment", ...
+        "Spinup results lack an initial state for the frame-zero map.");
+end
+frames = [frames;table(firstReader,0,0,string(summary.phase(initialRow)), ...
+    summary.phase_year(initialRow),summary.phase_time_days(initialRow), ...
+    VariableNames=frames.Properties.VariableNames)];
 for readerIndex = 1:numel(readers)
     if definitions(readerIndex).Phase ~= "spinup"
         continue
@@ -280,6 +297,17 @@ frames = table([],[],[],strings(0,1),[],[], ...
     VariableNames=["ReaderIndex","LocalFrame","TimeDays","Phase", ...
     "PhaseYear","PhaseTimeDays"]);
 duration = 0;
+firstReader = find(string({definitions.Phase}) ~= "spinup",1);
+initialRows = find(summary.event == "initial");
+if isempty(firstReader) || isempty(initialRows)
+    error("BDam:ResultsAlignment", ...
+        "Monitored results lack an initial state for the frame-zero map.");
+end
+[~,firstInitial] = min(summary.time_days(initialRows));
+initialRow = initialRows(firstInitial);
+frames = [frames;table(firstReader,0,0,string(summary.phase(initialRow)), ...
+    summary.phase_year(initialRow),summary.phase_time_days(initialRow), ...
+    VariableNames=frames.Properties.VariableNames)];
 for readerIndex = 1:numel(readers)
     reader = readers{readerIndex};
     definition = definitions(readerIndex);
@@ -307,7 +335,8 @@ end
 if isempty(frames)
     error("BDam:ResultsAlignment","No monitored head frames were found.");
 end
-if ~timesMatch(frames.TimeDays,summary.time_days(summary.event == "completed_step"))
+if ~timesMatch(frames.TimeDays(frames.LocalFrame > 0), ...
+        summary.time_days(summary.event == "completed_step"))
     error("BDam:ResultsAlignment", ...
         "The continuous monitored summary timeline does not align with head workspaces.");
 end

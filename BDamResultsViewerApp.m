@@ -425,6 +425,10 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
         end
 
         function surface = getWaterSurface(app,frame)
+            if frame.LocalFrame == 0
+                surface = app.Results.InitialSurfaces{frame.ReaderIndex};
+                return
+            end
             if app.SurfaceCacheEnabled
                 surface = app.SurfaceCache{frame.ReaderIndex}(:,:,frame.LocalFrame);
             else

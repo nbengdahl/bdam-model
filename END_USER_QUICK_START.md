@@ -279,9 +279,9 @@ LaunchBDamResultsViewerApp("/absolute/path/to/completed/BDam")
 ```
 
 The root must contain `Geometry/BDamGeometry.mat` and `Runs/`, including the
-monitored summary CSV, each completed workspace's `bdam.hds`, and
-`monitoring_targets.csv`. Spinup outputs are required only when at least one
-spinup year was configured. The viewer never writes to these outputs.
+monitored summary CSV and each completed workspace's `bdam.ic`, `bdam.hds`,
+and `monitoring_targets.csv`. Spinup outputs are required only when at least
+one spinup year was configured. The viewer never writes to these outputs.
 
 The upper panel shows the complete selected monitoring series and a moving
 current-time line. Any number of variables may be selected, but they may use
@@ -300,7 +300,10 @@ Negative depth indicates head above land surface. Color and contour limits are
 held fixed across the selected scope so animation frames remain comparable.
 Use the scope menu to view Spinup, Monitored pre/post, or All phases; the All
 timeline offsets monitored results by the final spinup time. With zero spinup,
-the Spinup scope is omitted and All matches the monitored timeline. The slider,
+the Spinup scope is omitted and All matches the monitored timeline. Frame zero
+shows the actual initial condition from `bdam.ic`, followed by one frame for
+each saved end-of-step head; a 52-week simulation therefore has 53 frames.
+The slider,
 previous/next buttons, playback rate, Play/Pause button, and Loop option all
 operate on saved MF6 head times. The Transpose map axes option places Y on the
 horizontal axis and X on the vertical axis without changing model data. It is

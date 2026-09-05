@@ -21,6 +21,8 @@ All notable changes to BDam will be documented in this file.
 
 ### Changed
 
+- Results Viewer frame zero now reads the actual `bdam.ic` initial condition;
+  an N-step scope exposes N+1 frames, including 53 frames for a 52-week run.
 - The runner uses robust `COMPLEX` settings for the initial relaxation and
   the first 365-day annual solve, then automatically returns to balanced
   `MODERATE` settings for the remaining staged spinup and monitored years.
