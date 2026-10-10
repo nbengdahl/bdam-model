@@ -211,6 +211,11 @@ def validate(config):
             raise ValueError(f"Legacy mode requires identity {name} controls.")
 
 
+def scalar_identity(value):
+    """JSON 1 and 1.0 identify the same physical scalar candidate."""
+    return int(value) if isinstance(value, float) and value.is_integer() else value
+
+
 def expand(config, scalar_defaults, skip_baseline=False):
     """Scalar registry defines axes; native arrays never become Cartesian axes."""
     config = clone(config)
@@ -228,12 +233,12 @@ def expand(config, scalar_defaults, skip_baseline=False):
         if np.any([isinstance(v, (bool, np.bool_)) for v in flat]) or not np.issubdtype(flat.dtype, np.number) or np.any(~np.isfinite(flat)):
             raise ValueError(f"{name} requires finite numeric candidates.")
         if flat.size > 1:
-            axes[name] = list(dict.fromkeys(flat.tolist()))
+            axes[name] = list(dict.fromkeys(scalar_identity(v) for v in flat.tolist()))
         else:
-            put(config, name, flat[0].item())
+            put(config, name, scalar_identity(flat[0].item()))
     baseline = clone(config)
     for name in axes:
-        put(baseline, name, scalar_defaults[name])
+        put(baseline, name, scalar_identity(scalar_defaults[name]))
     baseline = resolve(baseline)
     reference_mean = baseline["synthetic_mean_streamflow_m3_per_day"]
     baseline["reference_mean_streamflow_m3_per_day"] = reference_mean
@@ -260,7 +265,13 @@ def expand(config, scalar_defaults, skip_baseline=False):
 
 
 def source_files(source):
+    # Ordinary preparation writes these into the source working directory.
+    # They are generated member artifacts, never immutable source inputs.
+    generated = {"forcing_request.json", "forcing_diagnostics.json", "campaign.json",
+                 "provenance.json", "resolved_config.json", "prepared.json",
+                 "status.json", "completion.json", "member_index.csv"}
     return sorted(p for p in source.iterdir() if p.is_file() and
+                  p.name not in generated and not p.name.endswith("_summary.csv") and
                   (p.suffix in (".m", ".py", ".md", ".json", ".csv", ".cff")
                    or p.name in ("requirements.txt", "LICENSE")))
 

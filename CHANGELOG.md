@@ -6,6 +6,12 @@
 - Add nonnegative C1-periodic precipitation/ET/inflow, conservative magnitude,
   timing and width controls, and exact monthly/weekly handoff integrals.
 - Default to 70 x 140 one-meter cells, 5 layers, 3/2/2 spinup and 2/2 monitored years.
+- Fix expanded-grid convergence by explicitly allowing 1000 outer iterations
+  in both existing IMS profiles, preserving strict tolerances and period counts.
+- Exclude generated campaign/forcing files from immutable source snapshots.
+- Normalize equal numeric scalar representations to avoid duplicate baselines.
+- Validate the complete baseline and a four-worker factorial with exact
+  serial/parallel scientific agreement; retain full outputs and measured QA.
 
 # Changelog
 

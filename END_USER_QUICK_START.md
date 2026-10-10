@@ -230,6 +230,13 @@ the whole workflow. Add
 `--solver-inner-output` only when detailed inner-iteration diagnostics are
 needed.
 
+Both profiles explicitly allow up to 1000 nonlinear outer iterations.
+The new grid/layer configuration exceeds the preset limits of 100 (COMPLEX) for the first
+annual dry-cell adjustment and 50 (MODERATE) for the next annual step.
+This changes the iteration allowance,
+with the existing presets, strict closure tolerances and one-step periods
+preserved. Solver statistics record the effective `outer_maximum`.
+
 On the packaged benchmark, the 20-wave balanced production solves took about
 68--72 seconds instead of 129--135 seconds and reduced MF6's reported
 allocation from roughly 11 GB to 286--289 MB. Runtime varies by computer.

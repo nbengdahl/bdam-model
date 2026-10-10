@@ -138,6 +138,23 @@ class CampaignTests(unittest.TestCase):
         members,_,_=expand(configuration(),SCHEMA['scalar_defaults']); self.assertEqual(len(members),1)
         members,_,_=expand(configuration(),SCHEMA['scalar_defaults'],True); self.assertEqual(len(members),0)
 
+    def test_numeric_scalar_identity_deduplicates_reference(self):
+        cfg=configuration()
+        cfg['forcing_controls']['precipitation']['shift_days']=[0,14]
+        cfg['forcing_controls']['inflow']['width_factor']=[1,1.2]
+        members,baseline,_=expand(cfg,SCHEMA['scalar_defaults'])
+        self.assertEqual(len(members),4)
+        self.assertEqual(sum(m == baseline for m in members),1)
+        members,_,_=expand(cfg,SCHEMA['scalar_defaults'],True)
+        self.assertEqual(len(members),3)
+        integer_cfg=configuration(); float_cfg=configuration()
+        float_cfg['n_layers']=5.0
+        float_cfg['forcing_controls']['precipitation']['shift_days']=0.0
+        float_cfg['forcing_controls']['inflow']['width_factor']=1.0
+        a,_,_=expand(integer_cfg,SCHEMA['scalar_defaults'])
+        b,_,_=expand(float_cfg,SCHEMA['scalar_defaults'])
+        self.assertEqual(digest(a),digest(b))
+
     def test_invalid_combinations_and_capacity_are_rejected(self):
         cfg=configuration(); cfg['n_layers']=[2,5]
         with self.assertRaisesRegex(ValueError,'Invalid combination'): expand(cfg,SCHEMA['scalar_defaults'])
@@ -158,9 +175,18 @@ class CampaignTests(unittest.TestCase):
             with h5py.File(source/'Geometry'/'BDamGeometry.mat','w') as geometry:
                 for name in ('X','Y','ZTop','dx','dy','parameters','post_dam','dam_settings'):
                     geometry.create_dataset(name,data=np.ones(1))
+            # A source checkout can already have ordinary preparation outputs.
+            write(source/'forcing_request.json', {'previous': 'preparation'})
+            write(source/'forcing_diagnostics.json', {'previous': 'diagnostics'})
             cfg=configuration(); write(source/'request.json',cfg)
             manifest=plan(source/'request.json',Path(temp)/'campaign',source)
             member=Path(manifest['members'][0]['path']); verify_snapshot(member)
+            self.assertNotIn('forcing_request.json', read(member/'provenance.json')['source_hashes'])
+            self.assertFalse((member/'forcing_diagnostics.json').exists())
+            # Member preparation can freely create/change generated artifacts.
+            write(member/'forcing_request.json', {'member': 'preparation'})
+            write(member/'forcing_diagnostics.json', {'member': 'diagnostics'})
+            verify_snapshot(member)
             manifest2=plan(source/'request.json',Path(temp)/'campaign',source)
             self.assertEqual(manifest,manifest2)
             (member/'usgs_13348000_hydrograph.csv').write_text('tampered')

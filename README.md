@@ -113,9 +113,9 @@ MPLCONFIGDIR=../matplotlib-cache python3 -m unittest -v test_bdam_workflow.py
 
 ## Configure the simulation
 
-The packaged terrain defaults define a 50-by-100-cell grid at 1 m spacing,
+The packaged terrain defaults define a 70-by-140-cell grid at 1 m spacing,
 with X transverse to the channel and Y along the channel. The centerline uses
-one 5 m-amplitude meander period over the 100 m reach, and the regional Y
+one 5 m-amplitude meander period over the 140 m reach, and the regional Y
 slope is 0.005. These defaults are shared by `MakeGrid.m` and the
 interactive MATLAB app.
 
@@ -278,6 +278,13 @@ the faster `balanced` profile and its `MODERATE` preset. If no spinup is
 configured, the first monitored annual solve is conservative and all later
 solves are balanced. The strict head and flow closure tolerances remain
 unchanged. The runner prevents `conservative` from being selected globally.
+
+Both profiles explicitly allow up to 1000 nonlinear outer iterations.
+The new grid/layer configuration exceeds the preset limits of 100 (COMPLEX) for the first
+annual dry-cell adjustment and 50 (MODERATE) for the next annual step.
+This changes the iteration allowance,
+with the existing presets, strict closure tolerances and one-step periods
+preserved. Solver statistics record the effective `outer_maximum`.
 
 Detailed inner-iteration diagnostics are normally unnecessary. Add
 `--solver-inner-output` only when diagnosing solver behavior. Every completed

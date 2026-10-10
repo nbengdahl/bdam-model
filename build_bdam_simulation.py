@@ -94,6 +94,10 @@ def _solver_settings(profile: str, save_inner_iterations: bool = False,
         ) from exc
     settings = {
         "complexity": complexity,
+        # Larger sweep grids can exceed preset limits (50/100) while their
+        # nonlinear corrections still converge. Keep damping and strict
+        # closures; allow enough iterations without introducing substeps.
+        "outer_maximum": 1000,
         "outer_dvclose": 1.0e-5,
         "inner_dvclose": 1.0e-6,
         "rcloserecord": "1e-6 strict",
@@ -935,6 +939,7 @@ def _write_solver_stats(workspace: Path, solver_profile: str, ntrailwaves: int,
         "solver_profile": solver_profile,
         "ims_complexity": ims_settings["complexity"],
         "solver_variant": "robust_initialization" if robust_initialization else "standard",
+        "outer_maximum": ims_settings["outer_maximum"],
         "outer_dvclose": 1.0e-5,
         "inner_dvclose": 1.0e-6,
         "inner_rclose": 1.0e-6,

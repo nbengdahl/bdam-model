@@ -86,6 +86,9 @@ class BDamWorkflowTests(unittest.TestCase):
         self.assertNotIn("csv_inner_output_filerecord", balanced)
         self.assertEqual(conservative["csv_inner_output_filerecord"], SOLVER_INNER_OUTPUT)
         self.assertEqual(balanced_initial["complexity"], "COMPLEX")
+        self.assertEqual(conservative["outer_maximum"], 1000)
+        self.assertEqual(balanced_initial["outer_maximum"], 1000)
+        self.assertEqual(balanced["outer_maximum"], 1000)
         with self.assertRaises(ValueError):
             _solver_settings("unknown")
 
@@ -117,6 +120,7 @@ class BDamWorkflowTests(unittest.TestCase):
             self.assertEqual(stats["solver_profile"], "balanced")
             self.assertEqual(stats["ims_complexity"], "COMPLEX")
             self.assertEqual(stats["solver_variant"], "robust_initialization")
+            self.assertEqual(stats["outer_maximum"], 1000)
             self.assertEqual(stats["mf6_version"], "6.7.0")
             self.assertEqual(stats["time_step_count"], 2)
             self.assertEqual(stats["total_outer_iterations"], 3)
