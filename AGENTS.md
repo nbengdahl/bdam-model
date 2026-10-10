@@ -28,9 +28,11 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
    has 52. Counts scale only with configured years (for example, 2/1/1 gives
    2 annual, 12 monthly, and 52 weekly outputs). The 7-day initial relaxation
    remains exactly 1 stress period, 1 time step, and 1 output.
-8. Before starting MODFLOW, check for an existing `build_bdam_simulation.py`
-   or `mf6` process. If another model run is active, stop and ask the user
-   whether it should remain active. Do not start a duplicate run.
+8. Independent campaign members may run concurrently, up to `n_parallel_runs`.
+   Launch campaigns through `bdam_sweeps.py run`; the runner owns campaign-wide
+   capacity slots and member claims. Never start a duplicate member or run two
+   models in the same output tree. Inspect existing processes to identify their
+   member/workspace; another independent campaign member is not a reason to stop.
 9. A quiet terminal does not mean the run is stuck. The runner captures MF6
    stdout. Check the active `bdam.lst`, file growth, and process activity.
 10. Do not restart a progressing run merely because it is quiet.
@@ -66,9 +68,10 @@ Check available local space before setup:
 df -h ..
 ```
 
-Reserve at least 4 GB for the default staged 1/1/1 spinup plus weekly 1/1
-pre-/post-dam run. More is needed if
-backups will be retained. Confirm that the selected home-directory path is on
+The branch default is 70 x 140 cells, 5 layers, 3/2/2 spinup years and 2/2
+monitored years. Reserve disk for all retained members plus simultaneous staging.
+The old 4 GB estimate applies to the smaller release benchmark, not this branch.
+Use the first full-output pilot to measure actual storage before a large campaign. Confirm that the selected home-directory path is on
 a local disk and is not redirected into a synchronized or network folder.
 
 ### 2. Put MODFLOW in the local run tree
@@ -115,9 +118,10 @@ environment inside each BDam run.
 pgrep -fl 'build_bdam_simulation.py|mf6' || true
 ```
 
-If this shows another real model process, do not start. Identify its run
-directory and ask the user whether to wait for it or terminate it. Never kill
-an existing process without authorization.
+Identify the run directory of each existing process. Independent campaign
+members are allowed under the campaign-wide `n_parallel_runs` limit. Do not
+launch the same member twice or kill another run. Use the campaign launcher
+rather than bypassing its member claims or capacity slots.
 
 Some managed agent sandboxes do not allow `pgrep` to read the process list and
 may print `Cannot get process list` or a `sysmon` error. That is an environment
@@ -251,7 +255,9 @@ Runs/spinup/initial_relaxation
 Runs/spinup/first_annual
 Runs/spinup/staged
 Runs/pre_dam/year_01
+Runs/pre_dam/year_02
 Runs/post_dam/year_01
+Runs/post_dam/year_02
 ```
 
 For every completed workspace, verify all of the following:
@@ -276,7 +282,7 @@ The runner may exit without printing a final celebratory message. Exit status
 zero plus the complete validation checklist is success. Do not require an
 extra phrase that the runner does not promise to print.
 
-The default run is expected to use about 2.1 GB in `Runs`. Report the
+The smaller release benchmark used about 2.1 GB; measure this branch pilot. Report the
 absolute run and output paths, configuration, dependency versions, tests,
 completion checks, warnings, and any retained diagnostic staging directory.
 
@@ -285,7 +291,7 @@ completion checks, warnings, and any retained diagnostic staging directory.
 - Running inside the project’s Google Drive folder.
 - Starting another run because the terminal is quiet.
 - Watching `mfsim.lst` instead of the active `bdam.lst`.
-- Running several copies of MODFLOW and making all of them slow.
+- Bypassing `n_parallel_runs` or starting duplicate members in shared workspaces.
 - Treating a nonfatal Matplotlib cache warning as a model failure. Set
   `MPLCONFIGDIR` as shown above.
 - Treating an empty `Runs` directory during staging as a failure.
@@ -331,3 +337,24 @@ expecting every generated text file to have the same bytes.
 Timestamp, path, container-layout, and elapsed-time differences are expected.
 Any numerical dataset, summary, monitoring, budget, or state difference is
 substantive and must be reported.
+
+## Parameter-sweeps branch workflow
+
+Read `SWEEPS.md` before preparing campaigns. Edit numeric scalar inputs in
+`MakeInputs.m` to scalars or candidate vectors; preserve native monthly/layer
+arrays. The schema registry is `bdam_parameter_schema.json`; when introducing
+new scalar inputs, register their branch default and add validation.
+
+`n_parallel_runs` is a single positive integer, never a sweep axis. Preparation
+is serial; simulations are isolated and bounded across all launchers sharing a
+campaign. Claims are OS locks, not merely PID files. Never delete lock files
+while a campaign is active. A quiet member may be waiting for a capacity slot.
+The runner preserves slot/claim descriptors across POSIX solver subprocesses.
+Do not copy or edit active member snapshots, generated handoffs, or results.
+
+Use preview to inspect Cartesian count and inputs before launch. Do not silently
+omit invalid combinations or weaken QA. Keep full outputs for pilots. Compact
+retention is explicit and occurs only after full validation; it keeps summaries,
+QA, solver statistics, logs and restart states but does not support the existing
+binary Results Viewer. Failed workspaces remain intact. Resume only with matching
+source/input/configuration fingerprints and validated completion receipts.

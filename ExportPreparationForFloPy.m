@@ -46,6 +46,13 @@ writeArray(h5_path, "/forcing/land_et_m_per_day", f.land_et_m_per_day);
 writeArray(h5_path, "/forcing/lake_precipitation_m_per_day", f.lake_precipitation_m_per_day);
 writeArray(h5_path, "/forcing/lake_evaporation_m_per_day", f.lake_evaporation_m_per_day);
 
+if isfield(f,"monthly_rates")
+    names = fieldnames(f.monthly_rates);
+    for q = 1:numel(names)
+        writeArray(h5_path,"/forcing/monthly/"+names{q},f.monthly_rates.(names{q})(:));
+        writeArray(h5_path,"/forcing/weekly/"+names{q},f.weekly_rates.(names{q})(:));
+    end
+end
 b = preparation.boundaries;
 writeArray(h5_path, "/boundaries/downstream_ghb_mask", uint8(b.downstream_ghb_mask));
 writeArray(h5_path, "/boundaries/domain_length_m", b.domain_length_m);
@@ -120,6 +127,14 @@ manifest.time_resolution = char(preparation.parameters.calendar.resolution);
 manifest.calendar_basis = char(preparation.parameters.forcing.calendar_basis);
 manifest.native_array_order = "MATLAB [x,y,layer], flattened column-major; see companion shape datasets";
 manifest.grid_shape = size(g.ZTop);
+if isfield(f,"transformation_version")
+    manifest.forcing_transformation_version = char(f.transformation_version);
+    manifest.forcing_controls = f.transformation_controls;
+    manifest.forcing_diagnostics = f.transformation_diagnostics;
+end
+if isfield(f,"rating_curve_out_of_range_periods")
+    manifest.rating_curve_out_of_range_periods = f.rating_curve_out_of_range_periods;
+end
 manifest.n_lakes = numel(sw.lakes);
 manifest.n_outlets = height(sw.outlets);
 manifest.atmospheric_flux_formulation = "UZF land recharge/ET; LAK precipitation/evaporation; RCH and EVT prohibited";

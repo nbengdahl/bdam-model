@@ -8,6 +8,7 @@ All MATLAB [x, y, layer] arrays are converted here, once, to MF6
 from __future__ import annotations
 
 import argparse
+import os
 import csv
 import datetime as dt
 import json
@@ -174,6 +175,24 @@ def _fall_average_period_values(source_edges: np.ndarray,
     return float(np.mean(monthly[[11, 0, 1]]))
 
 
+def _exact_forcing_rates(handoff, calendar, fallback):
+    """Use optional conservative periodic integrals; accept legacy v4 handoffs."""
+    if not isinstance(handoff, Handoff):
+        return fallback
+    with h5py.File(handoff.path, "r") as stream:
+        available = f"/forcing/{calendar}" in stream
+    if not available:
+        return fallback
+    names = fallback or dict.fromkeys(("upstream_inflow_m3_per_day", "land_recharge_m_per_day", "land_et_m_per_day",
+                                     "lake_precipitation_m_per_day", "lake_evaporation_m_per_day"))
+    result = {name: handoff.array(f"/forcing/{calendar}/{name}").ravel()[:-1]
+              for name in names}
+    expected = 12 if calendar == "monthly" else 52
+    if any(len(v) != expected or np.any(~np.isfinite(v)) or np.any(v < 0) for v in result.values()):
+        raise ValueError(f"Invalid exact {calendar} forcing rates.")
+    return result
+
+
 def _fall_average_forcing_schedule(handoff: Handoff, duration_days: float) -> RuntimeSchedule:
     """Build one transient period driven by September--November means."""
     if not np.isfinite(duration_days) or duration_days <= 0.0:
@@ -189,6 +208,9 @@ def _fall_average_forcing_schedule(handoff: Handoff, duration_days: float) -> Ru
             source_edges, handoff.array(f"/forcing/{name}").ravel())
         for name in forcing_names
     }
+    exact_monthly = _exact_forcing_rates(handoff, "monthly", {})
+    if exact_monthly:
+        forcing = {name: float(np.mean(values[[11, 0, 1]])) for name, values in exact_monthly.items()}
     downstream = _fall_average_period_values(
         source_edges, handoff.array("/boundaries/downstream_control_stage_m").ravel())
     source_ghb = handoff.array("/boundaries/ghb/reference_head_m")
@@ -237,6 +259,8 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
         name: _resample_period_values(source_edges, values, week_edges)
         for name, values in source_forcing.items()
     }
+    monthly_forcing = _exact_forcing_rates(handoff, "monthly", monthly_forcing)
+    weekly_forcing = _exact_forcing_rates(handoff, "weekly", weekly_forcing)
     monthly_downstream = _resample_period_values(source_edges, source_downstream, month_edges)
     weekly_downstream = _resample_period_values(source_edges, source_downstream, week_edges)
     monthly_ghb = np.vstack([
@@ -839,9 +863,11 @@ def _execute_mf6(workspace: Path, solver_profile: str = "balanced") -> float:
     """Run one blocking MF6 process and require its explicit success markers."""
     workspace = Path(workspace)
     started = time.perf_counter()
+    from bdam_sweeps import lock_fds
     completed = subprocess.run(
         [str(_mf6_executable())], cwd=workspace, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+        **({"pass_fds": lock_fds()} if os.name == "posix" else {}),
     )
     elapsed_seconds = time.perf_counter() - started
     listing = workspace / "mfsim.lst"
@@ -1870,10 +1896,21 @@ def main() -> None:
     parser.add_argument("--stop-after-monthly-spinup", action="store_true",
                         help="validate initial conditions through monthly spinup, then stop")
     args = parser.parse_args()
-    run_from_handoff(args.handoff, staging_root=args.staging_root,
-                     solver_profile=args.solver_profile,
-                     save_inner_iterations=args.solver_inner_output,
-                     stop_after_monthly_spinup=args.stop_after_monthly_spinup)
+    from bdam_sweeps import lock, slot, read
+    root, _, _ = _resolve_handoffs(args.handoff)
+    with lock(root.parent / ".bdam-run.lock") as acquired:
+        if not acquired:
+            raise RuntimeError(f"A model runner already owns {root.parent}.")
+        campaign_path = os.environ.get("BDAM_CAMPAIGN_MANIFEST")
+        campaign = read(campaign_path) if campaign_path else None
+        if campaign and str(root.parent.resolve()) not in {m["path"] for m in campaign["members"]}:
+            raise ValueError("Model directory is not registered in this campaign.")
+        from contextlib import nullcontext
+        with slot(campaign["root"], campaign["n_parallel_runs"]) if campaign else nullcontext():
+            run_from_handoff(args.handoff, staging_root=args.staging_root,
+                             solver_profile=args.solver_profile,
+                             save_inner_iterations=args.solver_inner_output,
+                             stop_after_monthly_spinup=args.stop_after_monthly_spinup)
 
 
 if __name__ == "__main__":

@@ -506,16 +506,16 @@ class BDamWorkflowTests(unittest.TestCase):
         app = (package / "BDamTerrainApp.m").read_text()
         self.assertTrue((package / "MakeInputs.m").is_file())
         for expected in (
-            "parameters.domain_length_x_m = 50;",
-            "parameters.domain_length_y_m = 100;",
+            "parameters.domain_length_x_m = 70;",
+            "parameters.domain_length_y_m = 140;",
             "parameters.sine_periods = 1;",
             "parameters.sine_amplitude_m = 5;",
             "parameters.regional_longitudinal_slope = 0.005;",
         ):
             self.assertIn(expected, script)
         for expected in (
-            '"Domain X length (m)",50',
-            '"Domain Y length (m)",100',
+            '"Domain X length (m)",70',
+            '"Domain Y length (m)",140',
             '"Sine-wave periods",1',
             '"Meander amplitude (m)",5',
             '"Regional Y slope",0.005',

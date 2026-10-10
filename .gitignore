@@ -12,3 +12,8 @@ staging/
 matplotlib-cache/
 model_runner.log
 *.tar.gz
+
+Campaign/
+.bdam-run.lock
+forcing_request.json
+forcing_diagnostics.json

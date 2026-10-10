@@ -1,3 +1,9 @@
+> **Parameter-sweeps branch:** defaults are 70 x 140 cells at 1 m spacing,
+> 5 groundwater layers, 3/2/2 staged spinup and 2 pre-dam + 2 post-dam years.
+> For Cartesian sweeps, periodic forcing and parallel runs, follow [SWEEPS.md](SWEEPS.md).
+> Historical release runtime/disk estimates below apply to the smaller benchmark;
+> measure the larger branch pilot before sizing an ensemble.
+
 # BDam model end-user quick-start manual
 
 ## Purpose
@@ -179,9 +185,9 @@ coupling footprint.
 pgrep -fl 'build_bdam_simulation.py|mf6' || true
 ```
 
-Do not start a second run if another real BDam Python or `mf6` process is
-active. Decide whether to wait or stop it; never terminate someone else's run
-without authorization.
+Identify the active member directories. Independent campaign members may run
+concurrently under `n_parallel_runs`; do not start a duplicate member or use a
+shared output tree. Use `bdam_sweeps.py run` for coordinated execution.
 
 ### 5. Run and log the model
 
@@ -194,8 +200,8 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 ```
 
 The default sequence is one 7-day relaxation at September--November-average
-forcing, one fall-average spinup year, one monthly spinup year, one weekly spinup year, one
-monitored pre-dam year, and one monitored post-dam year. The relaxation runs
+forcing, three fall-average spinup years, two monthly spinup years, two weekly
+spinup years, two monitored pre-dam years, and two monitored post-dam years. The relaxation runs
 only when at least one fall-average spinup year is configured, and its final
 groundwater, lake, and UZF state initializes the fall-average year. A quiet
 terminal is normal because MF6 output is captured. Live progress is written to
@@ -237,7 +243,9 @@ Runs/spinup/initial_relaxation/
 Runs/spinup/first_annual/
 Runs/spinup/staged/
 Runs/pre_dam/year_01/
+Runs/pre_dam/year_02/
 Runs/post_dam/year_01/
+Runs/post_dam/year_02/
 Runs/spinup_summary.csv
 Runs/weekly_summary.csv
 ```
@@ -349,8 +357,8 @@ order is left side followed by right side.
 |---|---:|---|---|
 | `vertical_offset_m` | 0.25 | m | Floodplain step above the outer channel banks; nonnegative |
 | `dam_max_m` | 1.5 | m | BDA crest height above the sampled dam toe; nonnegative |
-| `domain_length_x_m` | 50 | m | Transverse domain width; positive and divisible by `spacing_x_m` |
-| `domain_length_y_m` | 100 | m | Projected channel-reach length; positive and divisible by `spacing_y_m` |
+| `domain_length_x_m` | 70 | m | Transverse domain width; positive and divisible by `spacing_x_m` |
+| `domain_length_y_m` | 140 | m | Projected channel-reach length; positive and divisible by `spacing_y_m` |
 | `spacing_x_m` | 1 | m | X cell width; positive |
 | `spacing_y_m` | 1 | m | Y cell width; positive |
 | `origin_x_m` | 0 | m | Minimum-X domain-edge coordinate |
@@ -372,7 +380,7 @@ The meander plus outer channel width must fit inside the X domain.
 | `source_geometry_file` | packaged geometry path | path | MAT file created by `MakeGrid.m` |
 | `longitudinal_direction` | `"y"` | choice | Axis used to locate upstream/downstream boundaries; normally Y |
 | `model_bottom_offset` | 5.0 | m | Model bottom below the lowest land-surface cell; positive |
-| `n_layers` | 10 | count | Number of groundwater layers; positive integer |
+| `n_layers` | 5 | count | Number of groundwater layers; positive integer |
 | `layer_growth_factor` | 1.35 | ratio | Deeper-to-shallower thickness growth; at least 1 |
 | `hydraulic_conductivity_mode` | `"constant"` | choice | `"constant"`, `"by_layer"`, or `"hydrofacies_points"` |
 | `specific_yield` | 0.20 | fraction | Drainable water from unconfined storage; between 0 and 1 |
@@ -467,11 +475,11 @@ The factors are normalized internally to a mean of one, then multiplied by
 | `external_weir_invert_depth_m` | 0.05 | m | External LAK outlet invert below time-zero downstream stage |
 | `initial_head_channel_offset_m` | 0.1 | m | Initial plane above the lowest channel cell at the downstream grid edge |
 | `initial_head_regional_slope_m_per_m` | from geometry | m/m | Automatically exported signed regional slope; initial plane is constant transversely |
-| `fall_average_spinup_years` | 1 | years | Constant September--November-average forcing spinup years |
-| `monthly_spinup_years` | 1 | years | Monthly-climatology spinup years |
-| `weekly_spinup_years` | 1 | years | Weekly-climatology spinup years |
-| `pre_dam_years` | 1 | years | Monitored pre-dam years |
-| `post_dam_years` | 1 | years | Monitored post-dam years; zero gives a no-dam monitored run |
+| `fall_average_spinup_years` | 3 | years | Constant September--November-average forcing spinup years |
+| `monthly_spinup_years` | 2 | years | Monthly-climatology spinup years |
+| `weekly_spinup_years` | 2 | years | Weekly-climatology spinup years |
+| `pre_dam_years` | 2 | years | Monitored pre-dam years |
+| `post_dam_years` | 2 | years | Monitored post-dam years; zero gives a no-dam monitored run |
 
 All year counts are nonnegative integers, and at least one monitored pre- or
 post-dam year is required. Do not add hidden spinup or extra MODFLOW time steps
@@ -723,3 +731,13 @@ For every scenario or calibration trial, record:
 
 This record is as important as the numerical output. It makes the model
 reviewable, repeatable, and suitable for engineering discussion.
+
+## Campaign execution on the parameter-sweeps branch
+
+The normal `MakeGrid.m` -> `MakeInputs.m` -> Python runner order remains.
+With scalar inputs and no explicit campaign root, `MakeInputs.m` creates the
+usual paired `ModelInput` handoffs. Supplying candidate vectors prepares isolated
+Cartesian members instead; launch their manifest using `bdam_sweeps.py run`.
+`BDAM_PREVIEW=1` plans without handoff preparation or solver execution. All active
+folders and the executable must be local and nonsynchronized. See `SWEEPS.md`
+for exact commands, baseline omission/reuse, collection and retention policies.

@@ -1,3 +1,12 @@
+## Unreleased — parameter sweeps branch
+
+- Add typed scalar Cartesian sweeps, baseline omission/reuse, immutable member
+  manifests, resume, CSV collection and explicit compact retention.
+- Add `n_parallel_runs` with shared campaign slots and duplicate-member guards.
+- Add nonnegative C1-periodic precipitation/ET/inflow, conservative magnitude,
+  timing and width controls, and exact monthly/weekly handoff integrals.
+- Default to 70 x 140 one-meter cells, 5 layers, 3/2/2 spinup and 2/2 monitored years.
+
 # Changelog
 
 ## Unreleased

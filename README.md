@@ -1,3 +1,9 @@
+> **Parameter-sweeps branch:** defaults are 70 x 140 cells at 1 m spacing,
+> 5 groundwater layers, 3/2/2 staged spinup and 2 pre-dam + 2 post-dam years.
+> For Cartesian sweeps, periodic forcing and parallel runs, follow [SWEEPS.md](SWEEPS.md).
+> Historical release runtime/disk estimates below apply to the smaller benchmark;
+> measure the larger branch pilot before sizing an ensemble.
+
 # BDam model package
 
 > **Release status:** BDam v0.1.0 is a usable but uncalibrated demonstration
@@ -67,7 +73,7 @@ parent directories, so `BDam/bin/mf6` is also valid.
 - MODFLOW 6 executable, tested with MF6 6.7.0 (2026-02-05). Obtain the binary
   for the host operating system from the official USGS MODFLOW 6 distribution,
   name it `mf6`, and place it in one of the `bin` locations above.
-- Local disk space. The default staged 1/1/1 spinup plus weekly 1/1 pre-/post-dam
+- Local disk space. The historical release staged 1/1/1 spinup plus weekly 1/1 pre-/post-dam
   case produces about 2.1 GB in `Runs` and needs approximately 900 MB of scratch
   space while the combined spinup workspace is active.
   Reserve at least 4 GB, plus more if prior `Runs_backup_*` directories will be
@@ -166,11 +172,11 @@ aquifer, forcing, and run configuration. The principal duration settings are:
 
 ```matlab
 time_resolution = "weekly";  % "weekly" or "daily"
-mf6_parameters.fall_average_spinup_years = 1;
-mf6_parameters.monthly_spinup_years = 1;
-mf6_parameters.weekly_spinup_years = 1;
-mf6_parameters.pre_dam_years = 1;
-mf6_parameters.post_dam_years = 1;
+mf6_parameters.fall_average_spinup_years = 3;
+mf6_parameters.monthly_spinup_years = 2;
+mf6_parameters.weekly_spinup_years = 2;
+mf6_parameters.pre_dam_years = 2;
+mf6_parameters.post_dam_years = 2;
 mf6_parameters.initial_head_channel_offset_m = 0.1;
 mf6_parameters.uzf_nwavesets = 20;
 ```
@@ -387,8 +393,8 @@ workspace—post-relaxation when a fall-average year is configured, otherwise
 the planar state—and all completed staged-spinup states and derived fluxes. Rows identify
 `spinup_fall_average`, `spinup_monthly`, or `spinup_weekly`, the stage year,
 stage-relative time, cumulative transient time, and interval duration. With the
-default 1/1/1 settings it contains 66 rows: one initial state plus one annual,
-12 monthly, and 52 weekly completed steps. Raw head, lake, and GHB observation
+default 3/2/2 settings it contains 132 rows: one initial state plus three annual,
+24 monthly, and 104 weekly completed steps. Raw head, lake, and GHB observation
 CSVs and `bdam.fluxes.csv` are generated at every saved step in the spinup
 workspaces and every pre-dam and post-dam annual workspace. Flux rates are m3/day and
 interval-integrated volumes are m3.
@@ -469,3 +475,13 @@ derivation, retrieval date, and checksum are recorded in
 
 Citation metadata are provided in `CITATION.cff`. BDam is distributed under
 the MIT License; see `LICENSE`.
+
+## Campaign execution on the parameter-sweeps branch
+
+The normal `MakeGrid.m` -> `MakeInputs.m` -> Python runner order remains.
+With scalar inputs and no explicit campaign root, `MakeInputs.m` creates the
+usual paired `ModelInput` handoffs. Supplying candidate vectors prepares isolated
+Cartesian members instead; launch their manifest using `bdam_sweeps.py run`.
+`BDAM_PREVIEW=1` plans without handoff preparation or solver execution. All active
+folders and the executable must be local and nonsynchronized. See `SWEEPS.md`
+for exact commands, baseline omission/reuse, collection and retention policies.
