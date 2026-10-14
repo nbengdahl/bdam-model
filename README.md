@@ -21,6 +21,45 @@ the documented local-run workflow.
 required operational runbook. Do not rely on inference when its checklist
 provides an explicit instruction.
 
+## Downstream boundary assumptions
+
+The monthly-first default passes full numerical validation and is 58% faster
+in spinup in the tested configuration. Boundary resistance and the lumped
+river representation still limit physical interpretation. See
+[BOUNDARY_VALIDATION.md](BOUNDARY_VALIDATION.md) for results and sensitivities.
+The next river investigation is described in
+[RIVER_REFINEMENTS.md](RIVER_REFINEMENTS.md).
+
+The default downstream groundwater boundary is **outflow-only DRN**, with its
+discharge threshold at the channel-bed elevation on the modeled outlet edge.
+It cannot inject groundwater. The external surface WEIR invert is independently
+set to that local bed plus `external_outlet_height_above_bed_m` (default zero).
+Lake stages evolve from the simulated budget; no remote river stage or
+upstream-flow-derived groundwater head is imposed. Initial river depth is an
+initial-state assumption only.
+
+`groundwater_boundary_mode = "constant_ghb"` is an explicit sensitivity option
+that allows bidirectional exchange at an assumed constant head, set by
+`constant_ghb_head_above_outlet_bed_m`. It does not change the surface outlet.
+Boundary resistance remains an uncalibrated effective `C = K A/L` assumption,
+not a claim about an observed control outside the domain. Drainage excludes
+regional groundwater inflow and external surface backwater; it is not a
+universal substitute for site boundary data.
+
+Handoff schema **v5** requires explicit local boundary mode, reference levels
+and surface outlet inverts. Regenerate old handoffs using MakeGrid then
+MakeInputs. Each workspace includes `boundary_assumptions.json`, and
+`bdam.groundwater_boundary_flux.csv` reports signed net exchange. In
+`bdam.fluxes.csv` and summaries, `groundwater_boundary_inflow` and
+`groundwater_boundary_outflow` are gross sums by cell sign. `ghb_inflow` and
+`ghb_outflow` refer only to opt-in GHB; they are zero in DRN mode, which reports
+`drain_outflow` separately. Total external budgets include the active boundary.
+
+Before interpreting local heads, test resistance, drainage level, constant GHB
+and domain extent. See [BOUNDARY_ASSUMPTIONS.md](BOUNDARY_ASSUMPTIONS.md) for the
+package audit, limitations and sensitivity procedure. Earlier numerical
+benchmarks in this README predate v5 and must not be treated as current values.
+
 ## Run only from a local filesystem
 
 Extract or copy the complete package to a local, non-synchronized folder
@@ -67,8 +106,8 @@ parent directories, so `BDam/bin/mf6` is also valid.
 - MODFLOW 6 executable, tested with MF6 6.7.0 (2026-02-05). Obtain the binary
   for the host operating system from the official USGS MODFLOW 6 distribution,
   name it `mf6`, and place it in one of the `bin` locations above.
-- Local disk space. The default staged 1/1/1 spinup plus weekly 1/1 pre-/post-dam
-  case produces about 2.1 GB in `Runs` and needs approximately 900 MB of scratch
+- Local disk space. The tested 0/4/1 monthly-first spinup plus weekly 2/2 pre-/post-dam
+  five-layer case produces about 1.7 GB in `Runs` and needs approximately 900 MB of scratch
   space while the combined spinup workspace is active.
   Reserve at least 4 GB, plus more if prior `Runs_backup_*` directories will be
   retained.
@@ -166,14 +205,21 @@ aquifer, forcing, and run configuration. The principal duration settings are:
 
 ```matlab
 time_resolution = "weekly";  % "weekly" or "daily"
-mf6_parameters.fall_average_spinup_years = 1;
-mf6_parameters.monthly_spinup_years = 1;
+mf6_parameters.fall_average_spinup_years = 0;
+mf6_parameters.monthly_spinup_years = 4;
 mf6_parameters.weekly_spinup_years = 1;
-mf6_parameters.pre_dam_years = 1;
-mf6_parameters.post_dam_years = 1;
+mf6_parameters.pre_dam_years = 2;
+mf6_parameters.post_dam_years = 2;
 mf6_parameters.initial_head_channel_offset_m = 0.1;
 mf6_parameters.uzf_nwavesets = 20;
 ```
+
+The current configuration uses four monthly-climatology spinup years, then
+one weekly year, with no annual constant-forcing phase. The first spinup
+workspace retains the historical directory name `first_annual`, but contains
+12 monthly periods, not one annual step. No 7-day fall relaxation is added
+when fall-average years are zero. Optional fall-average spinup is still
+available explicitly, but is not the recommended starting sequence.
 
 Spinup always uses the pre-dam condition. Its three year counts are independent
 nonnegative integers and may all be zero. The runner never adds hidden years or
@@ -185,9 +231,9 @@ lake, and UZF state initializes the continuous staged simulation in
 `Runs/spinup/staged`, which contains the remainder of the configured stages in this order:
 
 1. Each fall-average year is one 365-day stress period with exactly one
-   MODFLOW time step and one saved annual endpoint. Inflow, atmospheric rates,
-   downstream stage, and all GHB heads stay at the simple mean of their
-   September, October, and November monthly values.
+   MODFLOW time step and one saved annual endpoint. Inflow and atmospheric rates
+   are held at the simple mean of their September, October, and November
+   monthly values. Groundwater reference levels remain fixed in every phase.
 2. Each monthly year has 12 water-year calendar-month steps with duration-weighted monthly
    averages.
 3. Each weekly year has 52 steps of `365/52` days with weekly averages.
@@ -266,7 +312,7 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 ```
 
 The runner uses robust `COMPLEX` IMS settings for the 7-day relaxation and
-the first 365-day annual solve. That annual solve is recorded with the
+the first modeled year. That first-year solve is recorded with the
 `conservative` profile. Every remaining staged-spinup and monitored solve uses
 the faster `balanced` profile and its `MODERATE` preset. If no spinup is
 configured, the first monitored annual solve is conservative and all later
@@ -387,8 +433,8 @@ workspace—post-relaxation when a fall-average year is configured, otherwise
 the planar state—and all completed staged-spinup states and derived fluxes. Rows identify
 `spinup_fall_average`, `spinup_monthly`, or `spinup_weekly`, the stage year,
 stage-relative time, cumulative transient time, and interval duration. With the
-default 1/1/1 settings it contains 66 rows: one initial state plus one annual,
-12 monthly, and 52 weekly completed steps. Raw head, lake, and GHB observation
+current 0/4/1 monthly-first settings it contains 101 rows: one initial state
+plus 48 monthly and 52 weekly completed steps. Raw head, lake, and groundwater-boundary observation
 CSVs and `bdam.fluxes.csv` are generated at every saved step in the spinup
 workspaces and every pre-dam and post-dam annual workspace. Flux rates are m3/day and
 interval-integrated volumes are m3.
@@ -401,8 +447,10 @@ and continues through `Runs/spinup/staged` when a remainder exists.
 
 In the flux interface, `in_total` and `out_total` are coupled-system external
 fluxes. Inputs are land infiltration, lake precipitation, upstream surface
-inflow, and positive GHB inflow. Outputs are land ET, rejected infiltration,
-lake evaporation, external surface outflow and withdrawals, and GHB outflow.
+inflow, and gross groundwater-boundary inflow. Outputs are land ET, rejected
+infiltration, lake evaporation, external surface outflow and withdrawals, and
+gross groundwater-boundary outflow. Opposing boundary-cell flows are summed
+separately; netting never hides the gross exchanges.
 Internal LAK--GWF exchange, LAK-to-LAK routing, and storage terms are excluded.
 The former GWF listing totals remain available as `gwf_budget_in_total` and
 `gwf_budget_out_total`. `net_atmospheric_recharge` is land infiltration plus
@@ -413,10 +461,9 @@ Each rate field has a matching interval-volume field. Positive Lake 1/Lake 2
 exchange is lake-to-groundwater; positive cross-dam groundwater flow is
 upstream-to-downstream.
 
-With the current uncalibrated pond geometry, Lake 1 needs about 192 m3 of
-storage, or 2.2 days at the 86.4 m3/day mean inflow, to rise from the inherited
-pre-dam stage to the crest. Weekly mode therefore does not resolve that brief
-filling transient; select daily mode when that transient matters. Each annual
+Pond filling depends on the inherited simulated pre-dam stage and local outlet
+configuration. Weekly mode cannot resolve transients shorter than a week;
+select daily mode when that filling transient matters. Each annual
 workspace must have:
 
 - `Normal termination of simulation.` in `mfsim.lst`;

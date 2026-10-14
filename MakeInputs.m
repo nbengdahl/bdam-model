@@ -16,7 +16,7 @@ longitudinal_direction = "y";     % #User_Defined: direction from upstream to do
 % Grid and aquifer geometry [m].  The bottom follows the DEM's mean
 % longitudinal slope; layer thickness grows geometrically with depth.
 model_bottom_offset = 5.0;         % #User_Defined: [m] below lowest DEM cell
-n_layers = 10;                     % #User_Defined: groundwater layer count
+n_layers = 5;                     % #User_Defined: groundwater layer count
 layer_growth_factor = 1.35;        % #User_Defined: deeper/top layer-thickness ratio
 
 % Background aquifer properties.  Values are transparent first-pass values,
@@ -40,12 +40,13 @@ hydrofacies_class_properties = table(1, 0.03, 0.003, ...
 channel_half_width_cells = 1;       % #User_Defined: channel cells each side of local DEM minimum
 lakebed_thickness_m = 0.25;         % #User_Defined: [m], effective vertical lakebed thickness
 lakebed_vertical_k_m_per_day = 0.05; % #User_Defined: [m/day], effective lakebed K
-ghb_k_mean_m_per_day = K_constant;  % #User_Defined: [m/day], fixed K_mean in C=K_mean*A/L
-downstream_control_distance_in_domain_lengths = 1.0; % #User_Defined: control/GHB distance = this * domain length
-downstream_water_surface_slope_m_per_m = -0.005; % #User_Defined: stage gradient in the downstream flow direction [m/m]
-downstream_control_base_depth_m = 0.10; % #User_Defined: [m], stage above local channel bed at zero flow
-rating_curve_stage_range_m = 0.50; % #User_Defined: [m], annual low-to-high control-stage range
-rating_curve_exponent = 0.60;      % #User_Defined: h proportional to normalized Q^exponent
+groundwater_boundary_mode = "drain"; % #User_Defined: "drain" (outflow only) or "constant_ghb" (assumed bidirectional exchange)
+groundwater_boundary_k_m_per_day = K_constant; % #User_Defined: [m/day], effective boundary K in C=K*A/L
+groundwater_boundary_resistance_in_domain_lengths = 1.0; % #User_Defined: effective resistance length/domain length; not a remote control location
+drain_elevation_above_outlet_bed_m = 0.0; % #User_Defined: [m], local discharge threshold relative to modeled outlet bed
+constant_ghb_head_above_outlet_bed_m = 0.10; % #User_Defined: [m], explicit assumed head, only used in constant_ghb mode
+external_outlet_height_above_bed_m = 0.0; % #User_Defined: [m], independent free-outflow WEIR invert above modeled outlet bed
+initial_river_depth_above_outlet_bed_m = 0.10; % #User_Defined: [m], initial state only; not an imposed river stage
 forcing_interpolation = "STEPWISE"; % #User_Defined: MF6 time-series interpolation convention
 
 % Synthetic Pullman/Rose Creek-area climatology. NOAA Pullman 2 NW 1991--2020
@@ -73,13 +74,12 @@ mf6_parameters.uzf_extdp_m = 1.0; % #User_Defined: ET extinction depth [m]
 mf6_parameters.uzf_extwc = 0.10;  % #User_Defined: ET extinction water content [-]
 mf6_parameters.uzf_ntrailwaves = 7; % #User_Defined: MF6 UZF trailing-wave count
 mf6_parameters.uzf_nwavesets = 20; % #User_Defined: MF6 UZF numerical wave-set capacity
-mf6_parameters.external_weir_invert_depth_m = 0.05; % #User_Defined: below time-zero downstream control stage
 mf6_parameters.initial_head_channel_offset_m = 0.1; % #User_Defined: plane above downstream channel bottom [m]
-mf6_parameters.fall_average_spinup_years = 1; % #User_Defined: constant Sep--Nov-average forcing years, one step/year
-mf6_parameters.monthly_spinup_years = 1; % #User_Defined: varying monthly-average forcing years
+mf6_parameters.fall_average_spinup_years = 0; % #User_Defined: optional constant fall-average years; disabled for monthly-first spinup
+mf6_parameters.monthly_spinup_years = 4; % #User_Defined: varying monthly-average forcing years; replaces the two annual fall years
 mf6_parameters.weekly_spinup_years = 1; % #User_Defined: varying weekly-average forcing years
-mf6_parameters.pre_dam_years = 1; % #User_Defined: monitored annual years before dam installation
-mf6_parameters.post_dam_years = 1; % #User_Defined: monitored annual years after dam installation; zero is a no-dam run
+mf6_parameters.pre_dam_years = 2; % #User_Defined: monitored annual years before dam installation
+mf6_parameters.post_dam_years = 2; % #User_Defined: monitored annual years after dam installation; zero is a no-dam run
 
 % Native LAK sharp-weir controls. MF6 WEIR uses invert and effective width;
 % it does not expose a user discharge coefficient. Calibrate effective width.
@@ -109,8 +109,13 @@ assert(n_layers >= 1 && mod(n_layers, 1) == 0 && layer_growth_factor >= 1, ...
 assert(model_bottom_offset > 0 && channel_half_width_cells >= 0 && ...
     mod(channel_half_width_cells, 1) == 0, "Invalid shared geometry parameter.");
 assert(lakebed_thickness_m > 0 && lakebed_vertical_k_m_per_day > 0 && ...
-    downstream_control_distance_in_domain_lengths > 0 && ghb_k_mean_m_per_day > 0, ...
-    "Lakebed and GHB parameters must be positive.");
+    groundwater_boundary_resistance_in_domain_lengths > 0 && groundwater_boundary_k_m_per_day > 0, ...
+    "Lakebed and groundwater-boundary parameters must be positive.");
+assert(any(groundwater_boundary_mode == ["drain", "constant_ghb"]), "Unknown groundwater boundary mode.");
+assert(all(isfinite([drain_elevation_above_outlet_bed_m, constant_ghb_head_above_outlet_bed_m, ...
+    external_outlet_height_above_bed_m, initial_river_depth_above_outlet_bed_m])) && ...
+    external_outlet_height_above_bed_m >= 0 && initial_river_depth_above_outlet_bed_m > 0, ...
+    "Boundary levels must be finite; surface outlet height nonnegative and initial depth positive.");
 assert(all([mf6_parameters.fall_average_spinup_years, mf6_parameters.monthly_spinup_years, ...
     mf6_parameters.weekly_spinup_years] >= 0) && ...
     all(mod([mf6_parameters.fall_average_spinup_years, mf6_parameters.monthly_spinup_years, ...
@@ -204,31 +209,31 @@ forcing = makePullmanSyntheticForcing(forcing_time_days, ...
     forcing_interpolation);
 
 domain_length_m = domainLength(X, Y, longitudinal_direction);
-ghb_external_flow_path_length_m = downstream_control_distance_in_domain_lengths * domain_length_m;
+boundary_resistance_length_m = groundwater_boundary_resistance_in_domain_lengths * domain_length_m;
 downstream_local_bed_elevation_m = downstreamChannelBedElevation(ZTop, longitudinal_direction);
-rating_curve = makeSyntheticRatingCurve(downstream_local_bed_elevation_m, ...
-    forcing.upstream_inflow_m3_per_day, downstream_control_base_depth_m, ...
-    rating_curve_stage_range_m, rating_curve_exponent);
-downstream_control_stage = ratingCurveStage(rating_curve, forcing.upstream_inflow_m3_per_day);
-downstream_stage_timeseries = table(forcing_time_days, downstream_control_stage, ...
-    VariableNames=["time_days", "stage_m_at_downstream_control"]);
-
-% Downstream GHB cells occupy the outer longitudinal edge only. Their external
-% flow-path length and hydraulic control location are exactly one domain length
-% downstream by default (the #User_Defined multiplier above changes this).
-[ghb_mask, ghb_table] = makeGhbInputs(X, Y, Z, K_background, ghb_k_mean_m_per_day, ...
-    ghb_external_flow_path_length_m, downstream_water_surface_slope_m_per_m, ...
-    downstream_stage_timeseries, longitudinal_direction, ghb_external_flow_path_length_m);
+external_outlet_invert_m = downstream_local_bed_elevation_m + external_outlet_height_above_bed_m;
+initial_river_stage_m = downstream_local_bed_elevation_m + initial_river_depth_above_outlet_bed_m;
+if groundwater_boundary_mode == "drain"
+    groundwater_level_m = downstream_local_bed_elevation_m + drain_elevation_above_outlet_bed_m;
+    boundary_mode_code = 0;
+else
+    groundwater_level_m = downstream_local_bed_elevation_m + constant_ghb_head_above_outlet_bed_m;
+    boundary_mode_code = 1;
+end
+% This is a local discharge threshold (DRN) or an explicitly assumed constant
+% head (GHB), not a remote stage inferred from the upstream stream hydrograph.
+[groundwater_mask, groundwater_table] = makeGroundwaterBoundaryInputs(X, Y, Z, K_background, ...
+    groundwater_boundary_k_m_per_day, boundary_resistance_length_m, groundwater_level_m, ...
+    forcing_time_days, longitudinal_direction);
 boundary_definition = struct();
 boundary_definition.upstream_and_lateral = "NOFLOW";
-boundary_definition.downstream = "GHB";
-boundary_definition.downstream_ghb_mask = ghb_mask;
-boundary_definition.ghb_cells = ghb_table;
-boundary_definition.rating_curve = rating_curve;
-boundary_definition.reference_head_timeseries = ghb_table.reference_head_timeseries;
-boundary_definition.downstream_control_stage_timeseries = downstream_stage_timeseries;
+boundary_definition.downstream = groundwater_boundary_mode;
+boundary_definition.mode_code = boundary_mode_code;
+boundary_definition.downstream_groundwater_mask = groundwater_mask;
+boundary_definition.groundwater_cells = groundwater_table;
+boundary_definition.local_outlet_bed_m = downstream_local_bed_elevation_m;
 boundary_definition.domain_length_m = domain_length_m;
-boundary_definition.downstream_control_distance_m = ghb_external_flow_path_length_m;
+boundary_definition.resistance_length_m = boundary_resistance_length_m;
 boundary_definition.downstream_edge = downstreamEdgeDescription(ZTop, longitudinal_direction);
 
 %% 5. Derive, review, and export both scenario handoffs
@@ -239,18 +244,18 @@ for scenario_name = ["pre_dam", "post_dam"]
     scenario = struct();
     scenario.name = scenario_name;
     scenario.shared_input_names = ["geometry", "layers", "background_properties", ...
-        "channel_mask", "calendar", "forcing", "downstream_control", "boundary_conditions"];
+        "channel_mask", "calendar", "forcing", "local_outlet", "boundary_conditions"];
     scenario.treatment_only_input_names = strings(0,1);
 
 if scenario_name == "pre_dam"
     % The control is a single connected channel LAK.  Its initial level is the
-    % common downstream rating-curve stage at time zero, not a dam-face value.
-    control_stage_m = downstream_stage_timeseries.stage_m_at_downstream_control(1);
+    % explicitly initialized from the modeled outlet terrain; stage then evolves freely.
+    control_stage_m = initial_river_stage_m;
     pre_dam_mask = largestConnectedComponent(channel_mask);
     assert(any(pre_dam_mask, "all"), "The channel mask contains no connected pre-dam lake cells.");
     lakes = makeLakeDefinition("pre_dam_river", 1, pre_dam_mask, control_stage_m, ...
         ZTop, Z, dx, dy, lakebed_thickness_m, lakebed_vertical_k_m_per_day, []);
-    outlets = table("pre_dam_river", "external", NaN, pre_dam_outlet_width_m, ...
+    outlets = table("pre_dam_river", "external", external_outlet_invert_m, pre_dam_outlet_width_m, ...
         "pre_dam_external_weir", VariableNames=["provider_lake", "receiver", ...
         "invert_elevation_m", "width_m", "role"]);
     dam = emptyDamDefinition();
@@ -276,7 +281,7 @@ else
         "Maximum upstream and downstream LAK footprints overlap.");
     assert(any(ZTop(maximum_lake_mask) <= dam.initial_stage_m), ...
         "Upstream LAK has no cells wetted at its initial stage.");
-    downstream_initial_stage = downstream_stage_timeseries.stage_m_at_downstream_control(1);
+    downstream_initial_stage = initial_river_stage_m;
     assert(any(ZTop(downstream_lake_mask) <= downstream_initial_stage), ...
         "Downstream LAK has no cells wetted at its initial stage.");
     upstream_lake = makeLakeDefinition("upstream_impoundment", 1, maximum_lake_mask, ...
@@ -286,7 +291,7 @@ else
         lakebed_thickness_m, lakebed_vertical_k_m_per_day, []);
     lakes = [upstream_lake, downstream_lake];
     outlets = table(["upstream_impoundment"; "downstream_river"], ...
-        ["downstream_river"; "external"], [dam.crest_elevation_m; NaN], ...
+        ["downstream_river"; "external"], [dam.crest_elevation_m; external_outlet_invert_m], ...
         [post_dam_weir_width_m; pre_dam_outlet_width_m], ...
         ["post_dam_lak_weir_transfer"; "post_dam_external_outlet"], ...
         VariableNames=["provider_lake", "receiver", "invert_elevation_m", "width_m", "role"]);
@@ -365,9 +370,9 @@ preparation.observation_targets = makeObservationTargets(scenario_name, lakes, o
 
 %% 7. Review figures and write this scenario handoff
 makeReviewFigures(X, Y, ZTop, channel_mask, lakes, dam, BDA_LEAKAGE_FOOTPRINT, ...
-    ghb_mask, uzf, monitoring, scenario_name);
+    groundwater_mask, uzf, monitoring, scenario_name);
 makeForcingFigure(forcing);
-printReviewSummary(preparation, calendar, downstream_water_surface_slope_m_per_m);
+printReviewSummary(preparation, calendar);
 output_directory = fullfile(script_root,"ModelInput",scenario_name);
 [h5_path,~] = ExportPreparationForFloPy(preparation,output_directory);
 fprintf("BDam %s FloPy input written: %s\n",scenario_name,h5_path);
@@ -526,55 +531,30 @@ function bed = downstreamChannelBedElevation(ZTop, direction)
     end
 end
 
-function curve = makeSyntheticRatingCurve(bed, flow_series, base_depth, stage_range, exponent)
-    assert(all(isfinite(flow_series) & flow_series>0) && base_depth>=0 && stage_range>0 && exponent>0, ...
-        "Invalid synthetic rating-curve parameter.");
-    flow = quantile(flow_series,[0,0.25,0.5,0.75,1])'; flow=unique(flow);
-    normalized=(flow-flow(1))/(flow(end)-flow(1));
-    stage = bed + base_depth + stage_range * normalized.^exponent;
-    assert(numel(flow)>=3 && all(diff(flow)>0) && abs((stage(end)-stage(1))-stage_range)<1e-12, ...
-        "Synthetic rating curve must span the requested stage range.");
-    curve = table(flow, stage, VariableNames=["flow_m3_per_day", "stage_m_at_downstream_control"]);
-end
-
-function stage = ratingCurveStage(curve, flow)
-    required = ["flow_m3_per_day", "stage_m_at_downstream_control"];
-    assert(istable(curve) && all(ismember(required, string(curve.Properties.VariableNames))) && size(curve, 1) >= 2, ...
-        "rating_curve requires at least two flow/stage rows.");
-    [q, order] = sort(curve.flow_m3_per_day); z = curve.stage_m_at_downstream_control(order);
-    assert(all(isfinite(q)) && all(isfinite(z)) && all(diff(q) > 0), "Rating-curve flows must be finite and unique.");
-    stage = interp1(q, z, flow, "linear", "extrap");
-end
-
-function [mask, table_out] = makeGhbInputs(X, Y, Z, Kfield, Kmean, L, slope, stage_ts, direction, control_distance_m)
+function [mask, table_out] = makeGroundwaterBoundaryInputs(X, Y, Z, Kfield, Kmean, L, level, time, direction)
     [nx, ny, nzp1] = size(Z); nz = nzp1 - 1; mask = false(nx,ny,nz);
     ZTop = Z(:,:,end);
     if direction == "y"
-        if mean(ZTop(:,1), "all") <= mean(ZTop(:,end), "all"), edge = 1; outward_sign = -1; else, edge = ny; outward_sign = 1; end
-        mask(:,edge,:) = true; boundary_coordinate = mean(Y(:,edge), "all");
+        if mean(ZTop(:,1), "all") <= mean(ZTop(:,end), "all"), edge = 1; else, edge = ny; end
+        mask(:,edge,:) = true;
     else
-        if mean(ZTop(1,:), "all") <= mean(ZTop(end,:), "all"), edge = 1; outward_sign = -1; else, edge = nx; outward_sign = 1; end
-        mask(edge,:,:) = true; boundary_coordinate = mean(X(edge,:), "all");
+        if mean(ZTop(1,:), "all") <= mean(ZTop(end,:), "all"), edge = 1; else, edge = nx; end
+        mask(edge,:,:) = true;
     end
-    control_coordinate = boundary_coordinate + outward_sign * control_distance_m;
     [ii,jj,kk] = ind2sub(size(mask), find(mask));
-    linear_index = sub2ind([nx, ny], ii, jj);
-    if direction == "y", local_coordinate = Y(linear_index); else, local_coordinate = X(linear_index); end
-    % The user-specified slope is along the downstream flow direction. Convert
-    % it to the raw X/Y coordinate direction selected by the low-elevation end.
-    head_series = stage_ts.stage_m_at_downstream_control' + (slope * outward_sign) .* (local_coordinate - control_coordinate);
+    head_series = repmat(level, numel(ii), numel(time));
     % Include every hydraulically valid boundary cell. Shallow cells whose
-    % bottoms are above the controlled water surface cannot receive a GHB;
+    % bottoms are above the local reference level are excluded;
     % requiring every transverse column below prevents an accidental partial
     % side boundary while retaining a physically valid unconfined boundary.
     cell_bottom = zeros(numel(ii), 1);
     for q = 1:numel(ii), cell_bottom(q) = Z(ii(q),jj(q),kk(q)); end
     valid = all(head_series > cell_bottom + 1.0e-6, 2);
-    ii = ii(valid); jj = jj(valid); kk = kk(valid); local_coordinate = local_coordinate(valid);
+    ii = ii(valid); jj = jj(valid); kk = kk(valid);
     head_series = head_series(valid,:); n = numel(ii);
-    assert(n > 0, "No hydraulically valid downstream GHB cells remain.");
-    if direction == "y", assert(numel(unique(ii)) == nx, "Downstream GHB must span every cross-domain X column.");
-    else, assert(numel(unique(jj)) == ny, "Downstream GHB must span every cross-domain Y row."); end
+    assert(n > 0, "No hydraulically valid downstream groundwater boundary cells remain.");
+    if direction == "y", assert(numel(unique(ii)) == nx, "Downstream groundwater boundary must span every cross-domain X column.");
+    else, assert(numel(unique(jj)) == ny, "Downstream groundwater boundary must span every cross-domain Y row."); end
     mask = false(nx,ny,nz); mask(sub2ind(size(mask),ii,jj,kk)) = true;
     area = zeros(n,1); kmean_cell = zeros(n,1);
     for q = 1:n
@@ -583,10 +563,10 @@ function [mask, table_out] = makeGhbInputs(X, Y, Z, Kfield, Kmean, L, slope, sta
         area(q) = face_width * vertical; kmean_cell(q) = Kfield(ii(q),jj(q),kk(q));
     end
     conductance = Kmean * area / L;
-    assert(all(isfinite(conductance) & conductance > 0), "GHB conductances must be finite and positive.");
-    table_out = table(ii,jj,kk,area,kmean_cell,conductance, control_distance_m * ones(n,1), ...
-        VariableNames=["i_x", "i_y", "native_layer", "connection_area_m2", "cell_K_m_per_day", "conductance_m2_per_day", "external_flow_path_length_m"]);
-    table_out.reference_head_timeseries = num2cell(head_series, 2);
+    assert(all(isfinite(conductance) & conductance > 0), "Groundwater-boundary conductances must be finite and positive.");
+    table_out = table(ii,jj,kk,area,kmean_cell,conductance, L * ones(n,1), ...
+        VariableNames=["i_x", "i_y", "native_layer", "connection_area_m2", "cell_K_m_per_day", "conductance_m2_per_day", "resistance_length_m"]);
+    table_out.reference_level_timeseries = num2cell(head_series, 2);
 end
 
 function description = downstreamEdgeDescription(ZTop, direction)
@@ -748,7 +728,7 @@ end
 
 function targets=makeObservationTargets(scenario,lakes,outlets)
     lake_names=string({lakes.name})'; targets=table([lake_names; "groundwater"; "boundary"], ...
-        [repmat("stage_storage_lak_gwf_exchange",numel(lakes),1); "heads_bda_cross_section"; "ghb_flow_total_budget"], ...
+        [repmat("stage_storage_lak_gwf_exchange",numel(lakes),1); "heads_bda_cross_section"; "groundwater_boundary_flow_budget"], ...
         VariableNames=["feature","required_output"]);
     for q=1:size(outlets, 1), targets=[targets; {outlets.role(q), "outlet_or_transfer_flow"}]; end %#ok<AGROW>
     if scenario=="post_dam", targets=[targets; {"bda_leakage_zone", "cross_section_groundwater_flow"}]; end %#ok<AGROW>
@@ -764,7 +744,7 @@ function makeReviewFigures(X,Y,ZTop,channel,lakes,dam,leakage,ghb,uzf,monitoring
     nexttile; imagesc(X(:,1),Y(1,:),double(leakage)'); axis image xy; hold on; plotMonitoringPoints(monitoring,false);
     title("Effective BDA leakage footprint (post-dam only)"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
     nexttile; imagesc(X(:,1),Y(1,:),double(ghb(:,:,end))'); axis image xy; hold on; plotMonitoringPoints(monitoring,false);
-    title("Downstream layer-1 GHB cells"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
+    title("Downstream layer-1 groundwater boundary cells"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
     nexttile; imagesc(X(:,1),Y(1,:),double(uzf.eligible_mask(:,:,end))'); axis image xy; hold on; plotMonitoringPoints(monitoring,false);
     title("Layer-1 UZF eligibility"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
 end
@@ -800,7 +780,7 @@ function makeForcingFigure(forcing)
     xlabel("Model time (days)"); ylabel("Loss (mm/day)"); legend("Land ET","Lake evaporation","Location","best")
 end
 
-function printReviewSummary(prep,calendar,slope)
+function printReviewSummary(prep,calendar)
     fprintf("\nBDA preparation review: %s\n",prep.metadata.scenario);
     fprintf("  Calendar: %s, %d stress periods, %.12g days/year\n",calendar.resolution,numel(calendar.perlen_days),calendar.annual_duration_days);
     fprintf("  Shared channel cells: %d; lake count: %d\n",nnz(prep.surface_water.channel_mask),numel(prep.surface_water.lakes));
@@ -810,8 +790,12 @@ function printReviewSummary(prep,calendar,slope)
     end
     fprintf("  Atmospheric formulation: UZF land cells %d; LAK cells %d; RCH/EVT prohibited\n", ...
         nnz(prep.uzf.land_atmosphere_mask),nnz(prep.uzf.lake_atmosphere_mask));
-    fprintf("  Downstream GHB cells: %d; longitudinal water-surface slope: %.6g m/m\n",numel(prep.boundaries.ghb_cells.i_x),slope);
-    fprintf("  GHB control distance: %.3f m (domain length %.3f m)\n",prep.boundaries.downstream_control_distance_m,prep.boundaries.domain_length_m);
+    fprintf("  Downstream groundwater boundary: %s; %d cells; local level %.6g m\n", ...
+        prep.boundaries.downstream,numel(prep.boundaries.groundwater_cells.i_x), ...
+        prep.boundaries.groundwater_cells.reference_level_timeseries{1}(1));
+    fprintf("  Effective boundary resistance length %.3f m; no remote stage/head specified\n",prep.boundaries.resistance_length_m);
+    fprintf("  Independent surface outlet invert %.6g m; local bed %.6g m\n", ...
+        prep.surface_water.outlets.invert_elevation_m(end),prep.boundaries.local_outlet_bed_m);
     f=prep.parameters.forcing; fprintf("  Synthetic forcing means: Q %.3f m^3/day; recharge %.4g m/day; ET %.4g m/day\n",f.mean_streamflow_m3_per_day,f.mean_recharge_m_per_day,f.mean_land_et_m_per_day);
     fprintf("  Initial-head plane: regional slope %.6g m/m; downstream channel offset %.6g m\n", ...
         prep.parameters.mf6_parameters.initial_head_regional_slope_m_per_m, ...

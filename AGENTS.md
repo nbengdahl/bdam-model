@@ -40,6 +40,19 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
     Stop only when correctness is uncertain, a required dependency is truly
     unavailable, validation fails, or proceeding would require a model change.
 
+## Boundary contract
+
+The default is local outflow-only DRN; constant GHB is an explicit sensitivity
+option. Never infer downstream stages or groundwater heads from the upstream
+hydrograph, derive the surface outlet from a GHB head, or silently migrate old
+handoffs. Use v5 inputs regenerated in order. Preserve the selected mode,
+fixed local reference levels and independent surface outlet through every
+spinup/restart phase. Require `boundary_assumptions.json` and
+`bdam.groundwater_boundary_flux.csv` in each completed workspace. Gross
+groundwater-boundary inflow/outflow must be summed by cell sign before netting.
+See `BOUNDARY_ASSUMPTIONS.md`; numerical closure alone does not validate the
+physical boundary assumptions.
+
 ## Exact run procedure
 
 The paths below are examples. Replace the source tarball path and choose a
@@ -66,7 +79,7 @@ Check available local space before setup:
 df -h ..
 ```
 
-Reserve at least 4 GB for the default staged 1/1/1 spinup plus weekly 1/1
+Reserve at least 4 GB for the current 0/4/1 monthly-first spinup plus weekly 1/1
 pre-/post-dam run. More is needed if
 backups will be retained. Confirm that the selected home-directory path is on
 a local disk and is not redirected into a synchronized or network folder.
@@ -171,15 +184,17 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 
 Do not run this command a second time while the first process is active.
 
-The 7-day September--November-average relaxation from planar initial
+When fall-average spinup is explicitly enabled, its 7-day September--November-average relaxation from planar initial
 conditions uses the robust COMPLEX initialization settings. The runner then
 uses the `conservative` profile only for the first 365-day annual run and
 returns to the faster `balanced` profile for every subsequent run,
 including every remaining fall-average, monthly, and weekly part of staged
 spinup and all monitored pre-dam and post-dam years. The strict closure
-tolerances remain unchanged between profiles. Do not pass
+tolerances remain unchanged between profiles. Both profiles explicitly allow
+2000 outer iterations, extending the sweep allowance for shallow-lake convergence; this is
+an iteration allowance, not a change to closure or damping. Do not pass
 `--solver-profile conservative`; the runner manages the one conservative
-annual solve internally and prevents conservative settings from being applied
+first-year solve internally and prevents conservative settings from being applied
 globally. If MF6 specifically reports that UZF `NWAVESETS` must be increased, change
 `mf6_parameters.uzf_nwavesets` from 20 to 40 in `MakeInputs.m`, regenerate the
 paired handoffs, and rerun. Never increase wave sets automatically or alter
@@ -235,7 +250,7 @@ separate `Completed pre-dam` line. The new post-dam staging directory is the
 evidence that the pre-dam year was published successfully.
 
 Model time follows an October 1--September 30 water year. All forcing,
-downstream-stage, and GHB series must retain this alignment; elapsed model-time
+and any groundwater-boundary schedule must retain this alignment; elapsed model-time
 counters remain ordinary days from zero.
 
 If no files change and the `mf6` process uses no CPU across repeated checks,
@@ -244,15 +259,19 @@ then report the evidence. Do not change model settings or restart blindly.
 
 ## Completion checklist
 
-The default staged-spinup plus weekly pre-/post-dam run should produce these directories:
+The monthly-first spinup plus weekly pre-/post-dam run should produce these directories (additional monitored years add their own year folders):
 
 ```text
-Runs/spinup/initial_relaxation
 Runs/spinup/first_annual
 Runs/spinup/staged
 Runs/pre_dam/year_01
 Runs/post_dam/year_01
 ```
+
+With zero fall-average years, `spinup/initial_relaxation` is absent. The
+historical `first_annual` directory contains the first 365-day year using 12
+monthly periods. Enabling fall-average years adds the separate 7-day
+`initial_relaxation` workspace and the configured annual fall steps.
 
 For every completed workspace, verify all of the following:
 
@@ -308,7 +327,7 @@ Use this order. Do not jump directly to changing source code or model inputs.
 | Active staging directory temporarily lacks `bdam.lst` | Treat it as a possible annual transition and repeat the guarded check shortly. |
 | `Runs` is empty while MF6 is active and staging files grow | Continue monitoring; publication happens only after annual validation. |
 | Required test fails, MATLAB reports a script/model assertion, MF6 exits nonzero, a required output is unreadable, final time is not 365 days, or water balance does not pass | Stop. Preserve the diagnostic staging workspace and report exact evidence. Do not alter physics, calendar, solver rules, or validation. |
-| First 365-day annual solve needs the more robust IMS profile | The runner applies `conservative` only to that annual solve and automatically resumes every remaining staged-spinup and monitored solve with `balanced`; never apply `conservative` globally. |
+| First 365-day annual solve needs the more robust IMS profile | The runner applies `conservative` only to that first-year solve and automatically resumes every remaining staged-spinup and monitored solve with `balanced`; never apply `conservative` globally. |
 | MF6 reports that UZF `NWAVESETS` must be increased | Change the user-defined value from 20 to 40, regenerate both handoffs with `MakeInputs.m`, and rerun. Increase further only if MF6 repeats the same error. |
 
 ## Reproducibility comparisons

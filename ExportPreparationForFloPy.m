@@ -47,18 +47,17 @@ writeArray(h5_path, "/forcing/lake_precipitation_m_per_day", f.lake_precipitatio
 writeArray(h5_path, "/forcing/lake_evaporation_m_per_day", f.lake_evaporation_m_per_day);
 
 b = preparation.boundaries;
-writeArray(h5_path, "/boundaries/downstream_ghb_mask", uint8(b.downstream_ghb_mask));
+writeArray(h5_path, "/boundaries/downstream_groundwater_mask", uint8(b.downstream_groundwater_mask));
 writeArray(h5_path, "/boundaries/domain_length_m", b.domain_length_m);
-writeArray(h5_path, "/boundaries/downstream_control_distance_m", b.downstream_control_distance_m);
-writeArray(h5_path, "/boundaries/rating_curve/flow_m3_per_day", b.rating_curve.flow_m3_per_day);
-writeArray(h5_path, "/boundaries/rating_curve/stage_m", b.rating_curve.stage_m_at_downstream_control);
-writeArray(h5_path, "/boundaries/downstream_control_stage_m", b.downstream_control_stage_timeseries.stage_m_at_downstream_control);
-ghb = b.ghb_cells;
-writeArray(h5_path, "/boundaries/ghb/i_x", ghb.i_x); writeArray(h5_path, "/boundaries/ghb/i_y", ghb.i_y);
-writeArray(h5_path, "/boundaries/ghb/native_layer", ghb.native_layer);
-writeArray(h5_path, "/boundaries/ghb/conductance_m2_per_day", ghb.conductance_m2_per_day);
-writeArray(h5_path, "/boundaries/ghb/external_flow_path_length_m", ghb.external_flow_path_length_m);
-writeArray(h5_path, "/boundaries/ghb/reference_head_m", vertcat(ghb.reference_head_timeseries{:}));
+writeArray(h5_path, "/boundaries/local_outlet_bed_m", b.local_outlet_bed_m);
+writeArray(h5_path, "/boundaries/groundwater/mode_code", b.mode_code);
+cells = b.groundwater_cells;
+writeArray(h5_path, "/boundaries/groundwater/i_x", cells.i_x);
+writeArray(h5_path, "/boundaries/groundwater/i_y", cells.i_y);
+writeArray(h5_path, "/boundaries/groundwater/native_layer", cells.native_layer);
+writeArray(h5_path, "/boundaries/groundwater/conductance_m2_per_day", cells.conductance_m2_per_day);
+writeArray(h5_path, "/boundaries/groundwater/resistance_length_m", cells.resistance_length_m);
+writeArray(h5_path, "/boundaries/groundwater/reference_level_m", vertcat(cells.reference_level_timeseries{:}));
 
 sw = preparation.surface_water;
 writeArray(h5_path, "/surface_water/channel_mask", uint8(sw.channel_mask));
@@ -82,6 +81,7 @@ for lake_number = 1:numel(sw.lakes)
     end
 end
 writeArray(h5_path, "/surface_water/outlets/width_m", sw.outlets.width_m);
+writeArray(h5_path, "/surface_water/outlets/invert_elevation_m", sw.outlets.invert_elevation_m);
 if preparation.metadata.scenario == "post_dam"
     writeArray(h5_path, "/surface_water/dam/crest_elevation_m", sw.dam.crest_elevation_m);
     writeArray(h5_path, "/surface_water/dam/maximum_lake_extent_stage_m", sw.dam.maximum_lake_extent_stage_m);
@@ -113,7 +113,7 @@ fields = fieldnames(mf6);
 for i = 1:numel(fields), writeArray(h5_path, "/mf6_parameters/" + fields{i}, mf6.(fields{i})); end
 
 manifest = struct();
-manifest.schema_version = "bdam-preparation-hdf5-v4";
+manifest.schema_version = "bdam-preparation-hdf5-v5";
 manifest.scenario = char(preparation.metadata.scenario);
 manifest.units = char(preparation.metadata.units);
 manifest.time_resolution = char(preparation.parameters.calendar.resolution);
@@ -122,6 +122,9 @@ manifest.native_array_order = "MATLAB [x,y,layer], flattened column-major; see c
 manifest.grid_shape = size(g.ZTop);
 manifest.n_lakes = numel(sw.lakes);
 manifest.n_outlets = height(sw.outlets);
+manifest.groundwater_boundary_mode = char(b.downstream);
+manifest.boundary_assumptions = "Local terrain-based discharge threshold or explicit constant GHB assumption; effective C=K*A/L resistance; independent free WEIR outlet; no inferred remote heads/stages";
+manifest.external_surface_outlet_invert_m = sw.outlets.invert_elevation_m(end);
 manifest.atmospheric_flux_formulation = "UZF land recharge/ET; LAK precipitation/evaporation; RCH and EVT prohibited";
 manifest.streamflow_forcing_source = char(preparation.parameters.forcing.synthetic_source);
 manifest.streamflow_hydrograph_file = char(preparation.parameters.forcing.hydrograph_file);
@@ -140,6 +143,8 @@ h5writeatt(h5_path,"/","schema_version",manifest.schema_version);
 h5writeatt(h5_path,"/","scenario",manifest.scenario);
 h5writeatt(h5_path,"/","units",manifest.units);
 h5writeatt(h5_path,"/","time_resolution",manifest.time_resolution);
+h5writeatt(h5_path,"/","groundwater_boundary_mode",manifest.groundwater_boundary_mode);
+h5writeatt(h5_path,"/","boundary_assumptions",manifest.boundary_assumptions);
 h5writeatt(h5_path,"/","monitoring_head_point_names_json",jsonencode(manifest.monitoring_head_point_names));
 fid = fopen(manifest_path, "w"); assert(fid > 0, "Cannot create manifest file.");
 fprintf(fid, "%s\n", jsonencode(manifest, PrettyPrint=true)); fclose(fid);
