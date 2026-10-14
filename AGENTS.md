@@ -68,7 +68,7 @@ Check available local space before setup:
 df -h ..
 ```
 
-The branch default is 70 x 140 cells, 5 layers, 3/2/2 spinup years and 2/2
+The branch default is 70 x 140 cells, 5 layers, 0/5/2 spinup years and 2/2
 monitored years. Reserve disk for all retained members plus simultaneous staging.
 The old 4 GB estimate applies to the smaller release benchmark, not this branch.
 Use the first full-output pilot to measure actual storage before a large campaign. Confirm that the selected home-directory path is on
@@ -175,9 +175,9 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 
 Do not run this command a second time while the first process is active.
 
-The 7-day September--November-average relaxation from planar initial
-conditions uses the robust COMPLEX initialization settings. The runner then
-uses the `conservative` profile only for the first 365-day annual run and
+When fall-average years are enabled, the 7-day September--November-average
+relaxation from planar initial conditions uses the robust COMPLEX initialization settings. The runner then
+uses the `conservative` profile only for the first modeled year (12 monthly periods with the default settings) and
 returns to the faster `balanced` profile for every subsequent run,
 including every remaining fall-average, monthly, and weekly part of staged
 spinup and all monitored pre-dam and post-dam years. The strict closure
@@ -247,6 +247,10 @@ collect the active staging path and the ends of `bdam.lst` and `mfsim.lst`,
 then report the evidence. Do not change model settings or restart blindly.
 
 ## Completion checklist
+
+With the default zero fall-average years, spinup/initial_relaxation is absent.
+The historical spinup/first_annual workspace contains 12 monthly periods.
+Both IMS profiles allow 2000 outer iterations with unchanged closures.
 
 The default staged-spinup plus weekly pre-/post-dam run should produce these directories:
 

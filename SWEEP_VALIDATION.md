@@ -1,3 +1,8 @@
+> Historical validation: the results below describe 3/2/2 spinup and a
+> 1000-iteration cap. On 14 October 2026, solver infrastructure was aligned
+> with main (2000 iterations; 0/5/2 monthly-first spinup). No new tests or
+> simulations were run for that synchronization, per user instruction.
+
 # Parameter-sweeps validation
 
 Validated October 10, 2026 with MATLAB R2025b, Python 3.14.6, FloPy 3.10.0,

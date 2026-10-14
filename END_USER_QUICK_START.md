@@ -1,5 +1,5 @@
 > **Parameter-sweeps branch:** defaults are 70 x 140 cells at 1 m spacing,
-> 5 groundwater layers, 3/2/2 staged spinup and 2 pre-dam + 2 post-dam years.
+> 5 groundwater layers, 0/5/2 staged spinup and 2 pre-dam + 2 post-dam years.
 > For Cartesian sweeps, periodic forcing and parallel runs, follow [SWEEPS.md](SWEEPS.md).
 > Historical release runtime/disk estimates below apply to the smaller benchmark;
 > measure the larger branch pilot before sizing an ensemble.
@@ -220,7 +220,7 @@ years. A monthly spinup year must be configured. Omit the flag for a full run;
 the runner preserves the diagnostic outputs in its usual timestamped backup.
 
 The runner uses robust MF6 `COMPLEX` settings for the relaxation from
-planar initial conditions and for only the first 365-day annual solve.
+planar initial conditions and for only the first modeled year (12 monthly periods with the default settings).
 That annual solve uses the `conservative` profile. Every remaining staged
 spinup and monitored solve returns to the faster `balanced` profile and its
 `MODERATE` preset, always with the same strict convergence tolerances. With no
@@ -230,7 +230,7 @@ the whole workflow. Add
 `--solver-inner-output` only when detailed inner-iteration diagnostics are
 needed.
 
-Both profiles explicitly allow up to 1000 nonlinear outer iterations.
+Both profiles explicitly allow up to 2000 nonlinear outer iterations.
 The new grid/layer configuration exceeds the preset limits of 100 (COMPLEX) for the first
 annual dry-cell adjustment and 50 (MODERATE) for the next annual step.
 This changes the iteration allowance,
@@ -482,8 +482,8 @@ The factors are normalized internally to a mean of one, then multiplied by
 | `external_weir_invert_depth_m` | 0.05 | m | External LAK outlet invert below time-zero downstream stage |
 | `initial_head_channel_offset_m` | 0.1 | m | Initial plane above the lowest channel cell at the downstream grid edge |
 | `initial_head_regional_slope_m_per_m` | from geometry | m/m | Automatically exported signed regional slope; initial plane is constant transversely |
-| `fall_average_spinup_years` | 3 | years | Constant September--November-average forcing spinup years |
-| `monthly_spinup_years` | 2 | years | Monthly-climatology spinup years |
+| `fall_average_spinup_years` | 0 | years | Constant September--November-average forcing spinup years |
+| `monthly_spinup_years` | 5 | years | Monthly-climatology spinup years |
 | `weekly_spinup_years` | 2 | years | Weekly-climatology spinup years |
 | `pre_dam_years` | 2 | years | Monitored pre-dam years |
 | `post_dam_years` | 2 | years | Monitored post-dam years; zero gives a no-dam monitored run |

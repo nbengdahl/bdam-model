@@ -94,10 +94,10 @@ def _solver_settings(profile: str, save_inner_iterations: bool = False,
         ) from exc
     settings = {
         "complexity": complexity,
-        # Larger sweep grids can exceed preset limits (50/100) while their
-        # nonlinear corrections still converge. Keep damping and strict
-        # closures; allow enough iterations without introducing substeps.
-        "outer_maximum": 1000,
+        # Use the sweep approach with room for shallow-lake annual transitions;
+        # the local-outlet case exceeded 1000 while its residual kept decreasing.
+        # This changes the iteration cap only, not damping, closure or time.
+        "outer_maximum": 2000,
         "outer_dvclose": 1.0e-5,
         "inner_dvclose": 1.0e-6,
         "rcloserecord": "1e-6 strict",
@@ -1789,7 +1789,7 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     if backup is not None:
         print(f"Archived existing run outputs at {backup}.")
     print(f"Annual MF6 workspaces will be staged under {Path(staging_root).expanduser().resolve()}.")
-    print("IMS solver policy: conservative for the first 365-day annual solve; "
+    print("IMS solver policy: conservative for the first modeled year (with monthly periods when configured); "
           f"{solver_profile} for every subsequent solve.")
 
     heads = _default_heads(pre)
@@ -1895,7 +1895,7 @@ def main() -> None:
     parser.add_argument("--staging-root", type=Path, default=None,
                         help="local scratch directory for annual MF6 workspaces (default: system temporary directory)")
     parser.add_argument("--solver-profile", choices=("balanced",), default="balanced",
-                        help="IMS profile for solves after the first 365-day annual solve")
+                        help="IMS profile for solves after the first modeled year")
     parser.add_argument("--solver-inner-output", action="store_true",
                         help="also save detailed inner-iteration CSV diagnostics")
     parser.add_argument("--stop-after-monthly-spinup", action="store_true",

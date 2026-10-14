@@ -1,3 +1,13 @@
+## Solver synchronization — 14 October 2026
+
+- Align both IMS profiles with main's 2000-iteration allowance, preserving
+  strict closure, damping, diagnostics and campaign execution safeguards.
+- Replace annual-first spinup with 0/5/2 monthly-first conditioning while
+  preserving the seven-year branch total; align the scalar schema defaults.
+- Update existing solver assertions without running tests or simulations,
+  per user instruction. Earlier validation below remains historical.
+- Retain the sweep branch's boundary physics; this is an infrastructure sync.
+
 ## Unreleased — parameter sweeps branch
 
 - Add typed scalar Cartesian sweeps, baseline omission/reuse, immutable member

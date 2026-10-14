@@ -1,5 +1,5 @@
 > **Parameter-sweeps branch:** defaults are 70 x 140 cells at 1 m spacing,
-> 5 groundwater layers, 3/2/2 staged spinup and 2 pre-dam + 2 post-dam years.
+> 5 groundwater layers, 0/5/2 staged spinup and 2 pre-dam + 2 post-dam years.
 > For Cartesian sweeps, periodic forcing and parallel runs, follow [SWEEPS.md](SWEEPS.md).
 > Historical release runtime/disk estimates below apply to the smaller benchmark;
 > measure the larger branch pilot before sizing an ensemble.
@@ -172,8 +172,8 @@ aquifer, forcing, and run configuration. The principal duration settings are:
 
 ```matlab
 time_resolution = "weekly";  % "weekly" or "daily"
-mf6_parameters.fall_average_spinup_years = 3;
-mf6_parameters.monthly_spinup_years = 2;
+mf6_parameters.fall_average_spinup_years = 0;
+mf6_parameters.monthly_spinup_years = 5;
 mf6_parameters.weekly_spinup_years = 2;
 mf6_parameters.pre_dam_years = 2;
 mf6_parameters.post_dam_years = 2;
@@ -272,14 +272,14 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 ```
 
 The runner uses robust `COMPLEX` IMS settings for the 7-day relaxation and
-the first 365-day annual solve. That annual solve is recorded with the
+the first modeled year (12 monthly periods with the default settings). That annual solve is recorded with the
 `conservative` profile. Every remaining staged-spinup and monitored solve uses
 the faster `balanced` profile and its `MODERATE` preset. If no spinup is
 configured, the first monitored annual solve is conservative and all later
 solves are balanced. The strict head and flow closure tolerances remain
 unchanged. The runner prevents `conservative` from being selected globally.
 
-Both profiles explicitly allow up to 1000 nonlinear outer iterations.
+Both profiles explicitly allow up to 2000 nonlinear outer iterations.
 The new grid/layer configuration exceeds the preset limits of 100 (COMPLEX) for the first
 annual dry-cell adjustment and 50 (MODERATE) for the next annual step.
 This changes the iteration allowance,
@@ -400,8 +400,8 @@ workspace—post-relaxation when a fall-average year is configured, otherwise
 the planar state—and all completed staged-spinup states and derived fluxes. Rows identify
 `spinup_fall_average`, `spinup_monthly`, or `spinup_weekly`, the stage year,
 stage-relative time, cumulative transient time, and interval duration. With the
-default 3/2/2 settings it contains 132 rows: one initial state plus three annual,
-24 monthly, and 104 weekly completed steps. Raw head, lake, and GHB observation
+default 0/5/2 settings it contains 165 rows: one initial state plus
+60 monthly and 104 weekly completed steps. Raw head, lake, and GHB observation
 CSVs and `bdam.fluxes.csv` are generated at every saved step in the spinup
 workspaces and every pre-dam and post-dam annual workspace. Flux rates are m3/day and
 interval-integrated volumes are m3.
@@ -492,3 +492,15 @@ Cartesian members instead; launch their manifest using `bdam_sweeps.py run`.
 `BDAM_PREVIEW=1` plans without handoff preparation or solver execution. All active
 folders and the executable must be local and nonsynchronized. See `SWEEPS.md`
 for exact commands, baseline omission/reuse, collection and retention policies.
+
+## Solver synchronization — 14 October 2026
+
+Aligned IMS profiles with main: 2000 outer iterations, unchanged strict
+head/flow closures and damping, existing solver diagnostics and restart
+validation. Monthly-first spinup preserves this branch's seven-year total
+as 0 fall / 5 monthly / 2 weekly years. The historical first_annual
+workspace now holds 12 monthly periods; no initial_relaxation workspace
+is produced by default. Monitored years and campaign isolation are unchanged.
+This synchronization does not port main's v5 boundary physics.
+No tests or simulations were run for this update, as requested by the user;
+SWEEP_VALIDATION.md describes the earlier 3/2/2, 1000-iteration configuration.

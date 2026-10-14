@@ -1,7 +1,7 @@
 # Parameter sweeps and sensitivity runs
 
-This branch defaults to 70 x 140 cells at 1 m spacing, five layers, a seven-day
-relaxation followed by 3 fall-average / 2 monthly / 2 weekly spinup years, and
+This branch defaults to 70 x 140 cells at 1 m spacing, five layers, 0 fall-average / 5 monthly / 2 weekly spinup years (no initial seven-day
+relaxation with zero fall-average years), and
 two monitored pre-dam plus two post-dam years. These are starting settings;
 use interannual state changes to assess whether spinup is adequate.
 
@@ -165,7 +165,7 @@ MPLCONFIGDIR=/absolute/local/cache python3 -m unittest -v \
   test_bdam_workflow.py test_bdam_sweeps.py
 ```
 
-Pilot acceptance requires the full 3/2/2 + 2/2 baseline, then a small factorial
+Pilot acceptance requires the full 0/5/2 + 2/2 baseline, then a small factorial
 campaign run serially and with two active solvers. Compare scientific summary
 CSV values; timestamps and runtime logs are not scientific differences. Report
 water-balance QA, saved-step counts, runtime, memory, storage and interannual
