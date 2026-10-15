@@ -305,8 +305,13 @@ one spinup year was configured. The viewer never writes to these outputs.
 By default, six curves are selected: the four named channel groundwater-head
 monitors and Lake 1 and Lake 2 stages. The head monitors measure bottom-layer
 groundwater beneath the channel; the lake stages measure surface water.
-Pre-dam lakes are numbered upstream to downstream; after installation,
-Lake 1 is the pond and Lake 2 is the first downstream river pool.
+Lake numbers identify different features before and after dam installation.
+Pre-dam, Lakes 1 through 8 are river pools numbered upstream to downstream.
+Post-dam, only three lakes exist: Lake 1 is the sole upstream pond, Lake 2
+is the first downstream river pool, and Lake 3 is the final downstream pool.
+Thus, Lake 2 changes from the second-most-upstream pre-dam pool to a
+downstream post-dam pool; a same-number stage curve does not follow the same
+physical feature across the transition.
 
 The upper panel shows the complete selected monitoring series and a moving
 current-time line. Any number of variables may be selected, but they may use
