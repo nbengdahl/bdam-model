@@ -27,6 +27,9 @@
 
 ## 0.2.0 — 2026-10-14
 
+- Port river and local boundary physics into member preparation and campaign runtime; retain periodic forcing, locks and retention. Register river controls, fingerprint the helper and require fresh campaign/parameter schemas v2. Validate the full larger-grid baseline and 53 fast tests.
+
+
 - Promote validated coarse Manning river pools, two downstream segments and pond-only upper-bank exchange trimming with full DEM storage.
 - Conserve surface volume at installation, preserve geographic exchange totals and document phase-dependent native LAK IDs.
 - Require regenerated schema v6 handoffs with independent storage/exchange masks and outlet laws.

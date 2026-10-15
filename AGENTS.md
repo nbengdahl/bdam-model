@@ -111,7 +111,7 @@ python3 --version
 python3 -m pip install --user -r requirements.txt
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py
+  python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py test_bdam_sweeps.py
 ```
 
 All tests must pass. If dependency installation fails because network access
@@ -128,7 +128,9 @@ environment inside each BDam run.
 pgrep -fl 'build_bdam_simulation.py|mf6' || true
 ```
 
-If this shows another real model process, do not start. Identify its run
+For campaign runs, independent members may run under the campaign-wide capacity
+locks through `bdam_sweeps.py run`; never launch the same member twice. For
+standalone runs, if this shows another real model process, do not start. Identify its run
 directory and ask the user whether to wait for it or terminate it. Never kill
 an existing process without authorization.
 

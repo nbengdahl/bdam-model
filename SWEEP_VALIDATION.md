@@ -1,3 +1,39 @@
+# v0.2.0 integration validation — 14 October 2026
+
+The parameter-sweep branch now includes main's coarse Manning river pools,
+pond-only upper-bank exchange trimming, full DEM storage, conserved installation
+restart and independent local DRN / optional constant GHB boundaries. Schema v6
+inputs and campaign/parameter schemas v2 require fresh preparation. The existing
+70 × 140 × 5 grid and periodic forcing are retained; spinup is 0/4/1 with weekly
+two-year pre-dam and two-year post-dam monitoring.
+
+All 53 fast workflow, river, forcing and campaign tests passed on the final merged
+source. MATLAB regenerated the larger geometry and both handoffs in an isolated
+local copy. Both FloPy packages passed build validation. The standard campaign
+launcher then completed one full-output default baseline on its first attempt:
+six validated workspaces, 308 saved endpoints, all required binaries, final times,
+observation/flux CSVs, solver statistics, restart arrays and passing budget QA.
+Maximum coupled external-budget discrepancy: 0.000575333149%. Installation
+surface-storage error: 6.9388939e-18 m³. Campaign elapsed time:
+640.3 seconds. No calendar, tolerance or solver changes
+were needed. The new helper is included in scientific source fingerprints.
+Repeating the campaign launch successfully revalidated and skipped the completed
+member without creating another attempt or starting MODFLOW.
+
+Pilot output root: `/Users/nick.engdahl/BDamRuns/sweeps-v0.2.0-pilot-20261014/campaign/members/43abb005e27066bd/BDam`.
+Detailed receipt: `/Users/nick.engdahl/BDamRuns/sweeps-v0.2.0-pilot-20261014/integration_checks.json`.
+Existing campaigns and snapshots were not edited. The simulation source was
+fixed at preparation; later changes were documentation, launcher defaults and
+planner validation allowing signed groundwater level offsets consistently with
+the main MATLAB contract. Runtime physics code is unchanged.
+
+This integration check covers the full default baseline and fast campaign tests.
+The historical factorial serial/parallel comparison below was not rerun with
+v0.2.0. It does not validate parameter rankings or losing/disconnected rivers.
+See RIVER_REFINEMENTS.md for physical limits and matched-control evidence.
+
+## Historical validation of earlier sweep physics
+
 > Historical validation: the results below describe 3/2/2 spinup and a
 > 1000-iteration cap. On 14 October 2026, solver infrastructure was aligned
 > with main (2000 iterations; 0/5/2 monthly-first spinup). No new tests or
