@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-14
+
+- Promote validated coarse Manning river pools, two downstream segments and pond-only upper-bank exchange trimming with full DEM storage.
+- Conserve surface volume at installation, preserve geographic exchange totals and document phase-dependent native LAK IDs.
+- Require regenerated schema v6 handoffs with independent storage/exchange masks and outlet laws.
+- Record comparative validation and physical limits in RIVER_REFINEMENTS.md; retain strict solver, budget and calendar checks.
+
 
 - Use monthly-first spinup: replace the two configured constant fall-average
   years with two additional monthly-climatology years, preserving five total
@@ -31,7 +37,7 @@
 
 All notable changes to BDam will be documented in this file.
 
-## Unreleased
+## Earlier unreleased development
 
 ### Added
 

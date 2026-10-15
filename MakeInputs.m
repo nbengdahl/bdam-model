@@ -45,8 +45,8 @@ groundwater_boundary_k_m_per_day = K_constant; % #User_Defined: [m/day], effecti
 groundwater_boundary_resistance_in_domain_lengths = 1.0; % #User_Defined: effective resistance length/domain length; not a remote control location
 drain_elevation_above_outlet_bed_m = 0.0; % #User_Defined: [m], local discharge threshold relative to modeled outlet bed
 constant_ghb_head_above_outlet_bed_m = 0.10; % #User_Defined: [m], explicit assumed head, only used in constant_ghb mode
-external_outlet_height_above_bed_m = 0.0; % #User_Defined: [m], independent free-outflow WEIR invert above modeled outlet bed
-initial_river_depth_above_outlet_bed_m = 0.10; % #User_Defined: [m], initial state only; not an imposed river stage
+external_outlet_height_above_bed_m = 0.0; % #User_Defined: [m], independent Manning outlet invert above modeled outlet bed
+initial_river_depth_above_outlet_bed_m = 0.10; % Legacy preparation preview; coarse pools initialize 0.10 m above their local low bed.
 forcing_interpolation = "STEPWISE"; % #User_Defined: MF6 time-series interpolation convention
 
 % Synthetic Pullman/Rose Creek-area climatology. NOAA Pullman 2 NW 1991--2020
@@ -81,9 +81,18 @@ mf6_parameters.weekly_spinup_years = 1; % #User_Defined: varying weekly-average 
 mf6_parameters.pre_dam_years = 2; % #User_Defined: monitored annual years before dam installation
 mf6_parameters.post_dam_years = 2; % #User_Defined: monitored annual years after dam installation; zero is a no-dam run
 
+% Coarse river: two halves between the outlet and dam. Groundwater
+% connections on the upper pond walls are excluded; full DEM storage retained.
+river_settings = struct();
+river_settings.downstream_segments = 2; % #User_Defined: validated two-pool configuration
+river_settings.manning_width_m = 2.0; % #User_Defined: effective flowing-channel width [m]
+river_settings.manning_roughness = 0.04; % #User_Defined: effective Manning roughness
+river_settings.pond_exchange_height_above_thalweg_m = 1.25; % #User_Defined: pond bank connection cutoff [m]
+river_settings.river_storage_height_above_highest_bed_m = 0.50; % #User_Defined: connected river storage-table extent [m]
+
 % Native LAK sharp-weir controls. MF6 WEIR uses invert and effective width;
 % it does not expose a user discharge coefficient. Calibrate effective width.
-pre_dam_outlet_width_m = 1.0;       % #User_Defined: [m], effective downstream outlet width
+pre_dam_outlet_width_m = 1.0;       % Legacy intermediate placeholder; effective river width is river_settings.manning_width_m.
 post_dam_weir_width_m = 2.0;        % #User_Defined: [m], assumed active BDA crest width
 
 % Shared BDA representation settings. Dam orientation and crest height are
@@ -313,6 +322,8 @@ else
         "BDA leakage-zone K and K33"];
 end
 
+[lakes,outlets,storage_atmosphere_mask,river_configuration] = makeCoarseRiverScenario( ...
+    scenario_name,lakes,outlets,ZTop,Z,X,Y,dx,dy,input_geometry,reference_dam,upstream_zone_mask,channel_mask,river_settings);
 all_lake_mask = false(nx, ny);
 lake_connection_count = zeros(nx, ny);
 for i_lake = 1:numel(lakes)
@@ -321,12 +332,12 @@ for i_lake = 1:numel(lakes)
 end
 assert(all(lake_connection_count <= 1, "all"), ...
     "A groundwater cell is connected vertically to more than one LAK.");
-uzf = makeUzfEligibility(all_lake_mask, nz);
+uzf = makeUzfEligibility(storage_atmosphere_mask, nz);
 % Atmospheric-flux rule: UZF is the only land recharge/ET pathway, while LAK
 % is the only precipitation/evaporation pathway over lake footprints. RCH and
 % EVT are intentionally prohibited to prevent duplicate atmospheric fluxes.
-uzf.land_atmosphere_mask = ~all_lake_mask;
-uzf.lake_atmosphere_mask = all_lake_mask;
+uzf.land_atmosphere_mask = ~storage_atmosphere_mask;
+uzf.lake_atmosphere_mask = storage_atmosphere_mask;
 assert(~any(uzf.land_atmosphere_mask & uzf.lake_atmosphere_mask, "all") && ...
     all(uzf.land_atmosphere_mask | uzf.lake_atmosphere_mask, "all"), ...
     "Land and lake atmospheric masks must be mutually exclusive and complete.");
@@ -359,6 +370,7 @@ preparation.properties.BDA_LEAKAGE_FOOTPRINT = BDA_LEAKAGE_FOOTPRINT;
 preparation.properties.BDA_LEAKAGE_MASK = BDA_LEAKAGE_MASK;
 preparation.surface_water = struct();
 preparation.surface_water.channel_mask = channel_mask; preparation.surface_water.lake_masks = lake_masks;
+preparation.surface_water.coarse_river = river_configuration;
 preparation.surface_water.lakes = lakes; preparation.surface_water.outlets = outlets; preparation.surface_water.dam = dam;
 preparation.validation_zones = struct("upstream_mask", upstream_zone_mask, ...
     "downstream_mask", downstream_zone_mask, "reference_dam", reference_dam, ...

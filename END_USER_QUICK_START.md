@@ -1,5 +1,17 @@
 # BDam model end-user quick-start manual
 
+## River formulation (v0.2.0)
+
+The default uses coarse Manning-connected LAK river pools: eight before the dam,
+then one pond and two downstream pools on the default terrain. Upper pond banks
+are excluded from groundwater exchange, while full connected topography supplies
+storage. Installation conserves surface volume. See [RIVER_REFINEMENTS.md](RIVER_REFINEMENTS.md)
+for settings, validation evidence, observation meanings and remaining limitations.
+The current workflow is 0 fall / 4 monthly / 1 weekly spinup years and two weekly
+pre-dam plus two post-dam years. Historical timing/head benchmarks below describe
+earlier formulations and are retained only as historical evidence.
+
+
 ## Purpose
 
 This manual explains how to prepare, run, inspect, and modify the BDam
@@ -120,9 +132,9 @@ path consistently in the commands below and keep the same folder layout.
 
 ```zsh
 mkdir -p "$HOME/BDamRuns/bdam-run-mycase"
-cp /path/to/BDam-v0.1.0.tar.gz \
-  "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.1.0.tar.gz"
-tar -xzf "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.1.0.tar.gz" \
+cp /path/to/BDam-v0.2.0.tar.gz \
+  "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.0.tar.gz"
+tar -xzf "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.0.tar.gz" \
   -C "$HOME/BDamRuns/bdam-run-mycase"
 cd "$HOME/BDamRuns/bdam-run-mycase/BDam"
 ```
@@ -411,15 +423,19 @@ nearest-point classification, not geostatistical interpolation.
 | `groundwater_boundary_resistance_in_domain_lengths` | 1.0 | ratio | Effective resistance length divided by modeled reach length; positive; not a remote control location |
 | `drain_elevation_above_outlet_bed_m` | 0.0 | m | Local DRN discharge threshold relative to modeled outlet bed; does not prescribe groundwater head |
 | `constant_ghb_head_above_outlet_bed_m` | 0.10 | m | Explicit assumed constant GHB head relative to modeled outlet bed; only used in GHB mode |
-| `external_outlet_height_above_bed_m` | 0.0 | m | Independent free surface WEIR invert above modeled outlet bed; nonnegative |
-| `initial_river_depth_above_outlet_bed_m` | 0.10 | m | Initial state only; positive; not an imposed external stage |
+| `external_outlet_height_above_bed_m` | 0.0 | m | Independent flowing-channel Manning invert above modeled outlet bed; nonnegative |
+| Pool initial depth | 0.10 | m | Fixed above each pool's low bed; legacy preview depth is not an active coarse-river control |
 | `forcing_interpolation` | `"STEPWISE"` | choice | MODFLOW time-series interpolation; retain stepwise for period means |
-| `pre_dam_outlet_width_m` | 1.0 | m | Effective width of the downstream sharp-weir outlet; positive |
+| `river_settings.manning_width_m` | 2.0 | m | Effective flowing-channel width; positive |
+| `river_settings.manning_roughness` | 0.04 | — | Manning roughness; positive |
+| `river_settings.downstream_segments` | 2 | — | Fixed validated two-pool downstream configuration |
+| `river_settings.pond_exchange_height_above_thalweg_m` | 1.25 | m | Maximum pond exchange height above transverse thalweg |
+| `river_settings.river_storage_height_above_highest_bed_m` | 0.50 | m | River storage extent above highest local bed |
 | `post_dam_weir_width_m` | 2.0 | m | Effective active width of the BDA crest transfer; positive |
 
 No downstream head or river-stage record is required in default DRN mode.
 The deleted remote rating curve and slope projection must not be reconstructed
-in generated files. Handoff v5 intentionally rejects older inputs: run MakeGrid
+in generated files. Handoff v6 intentionally rejects older inputs: run MakeGrid
 and MakeInputs again. Drainage still assumes an open downstream discharge path;
 its threshold and resistance can affect the model. The surface outlet assumes
 free discharge without external backwater. The optional constant GHB specifies
@@ -533,7 +549,7 @@ MATLAB rather than manually entered. They are stored in paired HDF5 handoffs.
 | Calendar vectors | `perlen_days`, `nstp` | Stress-period length and one time step per period |
 | Lake connections | X index, Y index, native layer for every lake cell | Defines vertical LAK–GWF connections |
 | Stage–area–volume table | stage, area, and volume | Represents upstream impoundment storage |
-| Outlet widths | pre-dam external and post-dam transfer/outlet widths | LAK sharp-weir controls |
+| Outlet widths | Manning river width and BDA crest width | Manning channel transfers and sharp-weir crest |
 | Groundwater cell table | indices, conductance, effective resistance length, mode | Defines local DRN or constant GHB boundary |
 | Monitoring table | requested coordinates, resolved indices, layer | Defines head observations and cross-dam diagnostics |
 | Dam endpoints | two XY points | Divides upstream and downstream zones |

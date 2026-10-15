@@ -25,7 +25,7 @@ import h5py
 import numpy as np
 import flopy
 
-SCHEMA = "bdam-preparation-hdf5-v5"
+SCHEMA = "bdam-preparation-hdf5-v6"
 REQUIRED_BINARY_OUTPUTS = (
     "bdam.hds", "bdam.cbc", "bdam.lak.stage", "bdam.lak.bud",
     "bdam.uzf.wc", "bdam.uzf.bud",
@@ -348,6 +348,11 @@ def load_handoff(h5_path: Path) -> Handoff:
             manifest = {key: attribute_text(value) for key, value in h5.attrs.items()}
             if "monitoring_head_point_names_json" in manifest:
                 manifest["monitoring_head_point_names"] = json.loads(manifest.pop("monitoring_head_point_names_json"))
+    with h5py.File(h5_path, "r") as h5:
+        group = "/surface_water/coarse_river"
+        if group + "/enabled/data" in h5:
+            manifest["coarse_river"] = {key: float(np.asarray(value["data"]).ravel()[0])
+                                                    for key, value in h5[group].items()}
     if manifest.get("schema_version") != SCHEMA:
         raise ValueError(f"Unsupported handoff schema: {manifest.get('schema_version')!r}. Regenerate geometry and paired inputs with the current MakeGrid.m and MakeInputs.m; legacy remote-stage boundary assumptions are not migrated silently.")
     if manifest.get("units") != "meters and days":
@@ -462,7 +467,12 @@ def _build_groundwater_boundary(gwf, handoff: Handoff, time: np.ndarray,
         "external_surface_outlet_source": "independent modeled outlet bed plus explicit height",
         "requires_remote_head_or_stage_data": False,
         "specifies_assumed_groundwater_head": code == 1,
-        "surface_water_representation": "One stage per LAK feature; the pre-dam river is a lumped lake, not a routed sloping stream.",
+        "surface_water_representation": (
+            "Coarse LAK river pools with Manning transfers; full-topography storage; pond-only upper-bank exchange trim."
+            if "coarse_river" in handoff.manifest else
+            "One stage per LAK feature; the pre-dam river is a lumped lake, not a routed sloping stream."),
+        "external_surface_outlet_type": "MANNING" if "coarse_river" in handoff.manifest else "WEIR",
+        "atmospheric_partition": "Full storage footprints excluded from surface UZF; groundwater connection masks may be narrower; dry storage footprints lack land atmospheric treatment.",
         "limitations": "Uncalibrated boundary resistance; no external surface backwater. DRN excludes regional groundwater inflow. Test boundary mode, level, resistance and domain extent before interpreting local heads.",
     }
     (workspace / "boundary_assumptions.json").write_text(json.dumps(audit, indent=2) + "\n")
@@ -554,10 +564,10 @@ def _validate_lake_topology(h: Handoff, lakes: list[dict], top: np.ndarray) -> d
             raise ValueError(f"Lake {lake['number']} has no cells wetted at its initial stage.")
         dry_counts.append(int(np.count_nonzero(elevations > lake["stage"])))
     if h.manifest["scenario"] == "post_dam":
-        if len(lakes) != 2:
+        if len(lakes) != 2 and "coarse_river" not in h.manifest:
             raise ValueError("Post-dam handoff must contain exactly two lakes.")
         downstream_row = 0 if float(np.mean(top[0])) <= float(np.mean(top[-1])) else top.shape[0] - 1
-        if not any(row == downstream_row for _, row, _ in lakes[1]["cells"]):
+        if not any(row == downstream_row for _, row, _ in lakes[-1]["cells"]):
             raise ValueError("Downstream lake does not connect to the low-elevation downstream model edge.")
     return {"unique_lake_connections": len(seen), "dry_fixed_footprint_cells": dry_counts}
 
@@ -591,12 +601,12 @@ def _monitoring(h: Handoff, nlay: int, nrow: int, ncol: int, workspace: Path) ->
         "# Monitoring outputs\n\n"
         "- `bdam.heads.csv` contains simulated groundwater heads in meters at the targets in `monitoring_targets.csv`.\n"
         "- `bdam.lake_fluxes.csv` contains MF6 LAK observations. All flux observations, including rainfall and evaporation, are volumetric rates in m3/day; stage is m, volume is m3, and surface-area is m2 if included. The rainfall/evaporation input forcing depths, separately stored in the handoff, are m/day.\n"
-        "- Positive/negative signs are MF6's native conventions; `outlet1_flow` is the native LAK-to-LAK transfer in the post-dam model and the external outlet in the pre-dam model.\n"
+        "- Positive/negative signs are MF6's native conventions. `outletN_flow` refers to native outlet N; the final outlet is external. In the coarse post-dam model, outlet 1 is the dam crest transfer. Native lake/outlet IDs are phase-dependent.\n"
         "- `bdam.groundwater_boundary_flux.csv` reports signed net downstream groundwater-boundary exchange; boundary_assumptions.json records DRN or constant GHB, levels, conductance and independent surface outlet.\n"
         "- `bdam.fluxes.csv` contains coupled external inflow/outflow, atmospheric components, combined storage change, coupled residual, the separately named GWF listing totals, signed lake-to-groundwater exchange, and signed groundwater flow across the reference dam line at every saved step. Rates are m3/day and interval volumes are m3.\n"
         "- Coupled inputs are land infiltration, lake precipitation, upstream surface inflow, and gross groundwater-boundary inflow. Outputs are land ET, rejected infiltration, lake evaporation, external surface outflow/withdrawal, and gross groundwater-boundary outflow. Opposing cell flows are summed separately before aggregation. Internal LAK--GWF and LAK-to-LAK flow and storage terms are excluded from external totals.\n"
         "- `net_atmospheric_recharge` is infiltration plus lake precipitation minus land ET and lake evaporation. Positive `combined_storage_change` means increasing GWF+UZF+LAK storage; `coupled_mass_residual` is external net inflow minus storage change.\n"
-        "- Positive lake exchange is lake-to-groundwater; negative is groundwater-to-lake. Positive cross-dam flow is upstream-to-downstream. Before dam installation, lake1/lake2 denote the upstream/downstream portions of the single river divided at the reference dam line.\n"
+        "- Positive lake exchange is lake-to-groundwater; negative is groundwater-to-lake. Positive cross-dam flow is upstream-to-downstream. In derived flux summaries, lake1/lake2 aggregate all surface-water exchange upstream/downstream of the reference dam line in both phases. These geographic totals differ from the per-feature native LAK observation IDs. Native lake stage IDs also change at installation as upstream pools merge into the pond.\n"
         "- `bdam.cbc` and `bdam.water_balance.json` provide machine-readable model-budget accounting.\n"
     )
     return records
@@ -637,7 +647,7 @@ def _write_tab6(path: Path, table: np.ndarray) -> None:
         f.write("BEGIN DIMENSIONS\n")
         f.write(f"  NROW {len(table)}\n  NCOL 3\nEND DIMENSIONS\nBEGIN TABLE\n")
         for stage, volume, area in table:
-            f.write(f"  {stage:.12g} {volume:.12g} {area:.12g}\n")
+            f.write(f"  {stage:.18g} {volume:.18g} {area:.18g}\n")
         f.write("END TABLE\n")
 
 
@@ -666,9 +676,10 @@ def validate_lak_outlet_routes(lak_path: Path) -> None:
         1: [(1, 1, 0)],             # pre-dam lake -> external boundary
         2: [(1, 1, 2), (2, 2, 0)], # upstream lake -> downstream lake -> external boundary
     }
-    expected = expected_by_count.get(len(actual))
+    expected = ([(i + 1, i + 1, i + 2 if i + 1 < len(actual) else 0)
+                 for i in range(len(actual))] if len(actual) > 2 else expected_by_count.get(len(actual)))
     if expected is None:
-        raise ValueError(f"{lak_path}: expected one or two outlets, found {len(actual)}.")
+        raise ValueError(f"{lak_path}: expected a nonempty linear outlet chain, found {len(actual)}.")
     if actual != expected:
         raise ValueError(f"{lak_path}: invalid LAK outlet routing {actual}; expected {expected}.")
 
@@ -723,7 +734,13 @@ def _atmospheric_masks(h: Handoff, lakes: list[dict], nrow: int, ncol: int) -> t
         for lay, row, col in item["cells"]:
             if lay == 0:
                 lake_connections[row, col] = True
-    if not np.array_equal(lake, lake_connections):
+    if "coarse_river" in h.manifest:
+        storage = np.zeros_like(lake)
+        for item in lakes:
+            storage |= mf2(h.array(f"/surface_water/lakes/lake_{item['number']}/storage_footprint_mask", bool))
+        if not np.array_equal(lake, storage) or np.any(lake_connections & ~storage):
+            raise ValueError("Coarse river atmospheric/storage mask or exchange containment is inconsistent.")
+    elif not np.array_equal(lake, lake_connections):
         raise ValueError("LAK footprints and lake atmospheric mask are inconsistent.")
     return land, lake
 
@@ -866,6 +883,16 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
         crest = h.scalar("/surface_water/dam/crest_elevation_m")
         outlets = [(0, 0, 1, "WEIR", crest, widths[0], 0.0, 0.0),
                    (1, 1, -1, "WEIR", external_invert, widths[1], 0.0, 0.0)]
+    if "coarse_river" in h.manifest:
+        codes = h.array("/surface_water/outlets/type_code", int).ravel()
+        inverts = h.array("/surface_water/outlets/invert_elevation_m").ravel()
+        rough = h.array("/surface_water/outlets/roughness").ravel()
+        slopes = h.array("/surface_water/outlets/slope").ravel()
+        if not all(len(v) == len(lakes) for v in (codes, inverts, widths, rough, slopes)):
+            raise ValueError("Coarse river outlet dimensions inconsistent.")
+        outlets = [(i, i, i + 1 if i + 1 < len(lakes) else -1,
+                    {1: "MANNING", 2: "WEIR"}[int(codes[i])], float(inverts[i]),
+                    float(widths[i]), float(rough[i]), float(slopes[i])) for i in range(len(lakes))]
     lak = flopy.mf6.ModflowGwflak(gwf, pname="LAK_MAIN", nlakes=len(lakes), noutlets=len(outlets), ntables=len(tables),
                                   packagedata=packagedata, connectiondata=connectiondata, tables=tables or None, outlets=outlets,
                                   surfdep=h.scalar("/mf6_parameters/uzf_surfdep_m"),
@@ -1117,20 +1144,12 @@ def _lake_exchange_rates(record, shape: tuple[int, int, int], upstream: np.ndarr
         if not 0 <= node < int(np.prod(shape)):
             raise RuntimeError("GWF LAK budget contains an invalid groundwater node.")
         q = float(item["q"])
-        if scenario == "pre_dam":
+        if scenario == "pre_dam" or scenario == "post_dam":
             cell = np.unravel_index(node, shape)
             if bool(upstream[cell[1], cell[2]]):
                 lake1 += q
             else:
                 lake2 += q
-        else:
-            lake_number = int(item["node2"])
-            if lake_number == 1:
-                lake1 += q
-            elif lake_number == 2:
-                lake2 += q
-            else:
-                raise RuntimeError(f"Post-dam LAK budget references unexpected lake {lake_number}.")
     total = float(np.sum(record["q"]))
     tolerance = max(1.0e-10, abs(total) * 1.0e-10)
     if not np.isclose(lake1 + lake2, total, atol=tolerance, rtol=0.0):
@@ -1821,6 +1840,43 @@ def _resolve_handoffs(path: str | Path) -> tuple[Path, Path, Path]:
     return root, pre, post
 
 
+def _coarse_restart_stages(pre: Handoff, post: Handoff, stages: np.ndarray, workspace: Path) -> np.ndarray:
+    """Conserve surface storage while upstream river pools merge into the pond."""
+    def table(h, i):
+        base = f"/surface_water/lakes/lake_{i}/stage_area_volume"
+        return h.array(base + "/stage_m").ravel(), h.array(base + "/volume_m3").ravel()
+    if stages is None:
+        stages = np.array([pre.scalar(f"/surface_water/lakes/lake_{i}/initial_stage_m")
+                           for i in range(1, int(pre.scalar("/surface_water/n_lakes")) + 1)])
+    stages = np.asarray(stages, dtype=float).ravel()
+    if len(stages) != int(pre.scalar("/surface_water/n_lakes")) or np.any(~np.isfinite(stages)):
+        raise ValueError("Invalid pre-dam restart stage count or values.")
+    for i, stage in enumerate(stages, 1):
+        z, v = table(pre, i)
+        if stage < z[0] or stage > z[-1]:
+            raise ValueError("Pre-dam restart stage outside storage table.")
+    before = [float(np.interp(st, *table(pre, i))) for i, st in enumerate(stages, 1)]
+    nd = int(post.scalar("/surface_water/coarse_river/downstream_segments"))
+    if nd != 2 or len(stages) <= nd or int(post.scalar("/surface_water/n_lakes")) != nd + 1:
+        raise ValueError("Inconsistent coarse river restart topology.")
+    target = [sum(before[:-nd]), *before[-nd:]]
+    result, after = [], []
+    for i, volume in enumerate(target, 1):
+        z, v = table(post, i)
+        if volume > v[-1] + 1e-8 or volume < v[0] - 1e-8:
+            raise ValueError("Restart surface volume outside post-dam storage table.")
+        # np.interp inversion handles flat zero-volume rows at the bottom.
+        stage = float(np.interp(volume, v, z))
+        result.append(stage); after.append(float(np.interp(stage, z, v)))
+    audit = {"before_volume_m3": sum(before), "after_volume_m3": sum(after),
+             "error_m3": sum(after) - sum(before), "post_stages_m": result,
+             "groundwater_heads_preserved": True, "common_uzf_features_mapped_by_cell": True}
+    if abs(audit["error_m3"]) > 1e-8:
+        raise ValueError("Non-conservative surface restart.")
+    (workspace / "dam_installation_storage_audit.json").write_text(json.dumps(audit, indent=2))
+    return np.asarray(result)
+
+
 def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
                      solver_profile: str = "balanced",
                      save_inner_iterations: bool = False,
@@ -1931,11 +1987,14 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
 
     if values["post_dam_years"]:
         # Dam installation changes only LAK/UZF topology. Groundwater heads are
-        # carried exactly; common UZF features are mapped by cell; and both new
-        # lakes inherit the final pre-dam river stage.
+        # carried exactly; common UZF features are mapped by cell; and the coarse
+        # surface-water restart conserves volume when upstream pools merge.
         inherited_stage = (float(stages[0]) if stages is not None else
                            pre.scalar("/surface_water/lakes/lake_1/initial_stage_m"))
-        stages = np.repeat(inherited_stage, int(post.scalar("/surface_water/n_lakes")))
+        if "coarse_river" in post.manifest:
+            stages = _coarse_restart_stages(pre, post, stages, workspace)
+        else:
+            stages = np.repeat(inherited_stage, int(post.scalar("/surface_water/n_lakes")))
         wc = _map_uzf_state(pre, post, wc)
     for year in range(1, values["post_dam_years"] + 1):
         run_ws = workspace / "post_dam" / f"year_{year:02d}"

@@ -1,6 +1,18 @@
 # BDam model package
 
-> **Release status:** BDam v0.1.0 is a usable but uncalibrated demonstration
+## River formulation (v0.2.0)
+
+The default uses coarse Manning-connected LAK river pools: eight before the dam,
+then one pond and two downstream pools on the default terrain. Upper pond banks
+are excluded from groundwater exchange, while full connected topography supplies
+storage. Installation conserves surface volume. See [RIVER_REFINEMENTS.md](RIVER_REFINEMENTS.md)
+for settings, validation evidence, observation meanings and remaining limitations.
+The current workflow is 0 fall / 4 monthly / 1 weekly spinup years and two weekly
+pre-dam plus two post-dam years. Historical timing/head benchmarks below describe
+earlier formulations and are retained only as historical evidence.
+
+
+> **Release status:** BDam v0.2.0 is a usable but uncalibrated demonstration
 > framework. It is not a calibrated field model, and its interfaces and model
 > formulation may change before v1.0.0.
 
@@ -27,16 +39,16 @@ The monthly-first default passes full numerical validation and is 58% faster
 in spinup in the tested configuration. Boundary resistance and the lumped
 river representation still limit physical interpretation. See
 [BOUNDARY_VALIDATION.md](BOUNDARY_VALIDATION.md) for results and sensitivities.
-The next river investigation is described in
+The selected river formulation and its validation are described in
 [RIVER_REFINEMENTS.md](RIVER_REFINEMENTS.md).
 
 The default downstream groundwater boundary is **outflow-only DRN**, with its
 discharge threshold at the channel-bed elevation on the modeled outlet edge.
-It cannot inject groundwater. The external surface WEIR invert is independently
+It cannot inject groundwater. The external surface Manning invert is independently
 set to that local bed plus `external_outlet_height_above_bed_m` (default zero).
 Lake stages evolve from the simulated budget; no remote river stage or
-upstream-flow-derived groundwater head is imposed. Initial river depth is an
-initial-state assumption only.
+upstream-flow-derived groundwater head is imposed. Coarse pools initialize 0.10 m above their own lowest bed; subsequent stages
+evolve from the simulated water budget.
 
 `groundwater_boundary_mode = "constant_ghb"` is an explicit sensitivity option
 that allows bidirectional exchange at an assumed constant head, set by
@@ -46,7 +58,7 @@ not a claim about an observed control outside the domain. Drainage excludes
 regional groundwater inflow and external surface backwater; it is not a
 universal substitute for site boundary data.
 
-Handoff schema **v5** requires explicit local boundary mode, reference levels
+Handoff schema **v6** requires explicit local boundary mode, reference levels
 and surface outlet inverts. Regenerate old handoffs using MakeGrid then
 MakeInputs. Each workspace includes `boundary_assumptions.json`, and
 `bdam.groundwater_boundary_flux.csv` reports signed net exchange. In
@@ -58,7 +70,7 @@ MakeInputs. Each workspace includes `boundary_assumptions.json`, and
 Before interpreting local heads, test resistance, drainage level, constant GHB
 and domain extent. See [BOUNDARY_ASSUMPTIONS.md](BOUNDARY_ASSUMPTIONS.md) for the
 package audit, limitations and sensitivity procedure. Earlier numerical
-benchmarks in this README predate v5 and must not be treated as current values.
+benchmarks in this README predate v0.2.0 and must not be treated as current values.
 
 ## Run only from a local filesystem
 
@@ -424,9 +436,10 @@ stages, and flux rates and interval volumes. The flux fields include whole-model
 `in_total`, `out_total`, and residuals; signed exchange from Lake 1 and Lake 2
 to groundwater; and signed groundwater flow across the reference dam line.
 Positive lake exchange is lake-to-groundwater, while positive cross-dam flow is
-upstream-to-downstream. In pre-dam years, the single river/lake is divided at
-the reference dam line and reported as upstream Lake 1 and downstream Lake 2
-portions so the same columns are available before and after dam installation.
+upstream-to-downstream. In pre-dam years, all pools are aggregated geographically at
+the reference dam line into upstream Lake 1 and downstream Lake 2 exchange
+totals in both phases. Native LAK IDs identify individual pools and change
+meaning at installation; native stages are not geographic exchange totals.
 
 `Runs/spinup_summary.csv` separately records the state supplied to the staged
 workspace—post-relaxation when a fall-average year is configured, otherwise

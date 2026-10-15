@@ -65,6 +65,7 @@ writeArray(h5_path, "/surface_water/n_lakes", numel(sw.lakes));
 for lake_number = 1:numel(sw.lakes)
     lake = sw.lakes(lake_number); base = string(sprintf("/surface_water/lakes/lake_%d", lake_number));
     writeArray(h5_path, base + "/footprint_mask", uint8(lake.footprint_mask));
+    writeArray(h5_path, base + "/storage_footprint_mask", uint8(lake.storage_footprint_mask));
     writeArray(h5_path, base + "/initial_stage_m", lake.initial_stage_m);
     writeArray(h5_path, base + "/connection_i_x", lake.connection_i_x);
     writeArray(h5_path, base + "/connection_i_y", lake.connection_i_y);
@@ -82,6 +83,12 @@ for lake_number = 1:numel(sw.lakes)
 end
 writeArray(h5_path, "/surface_water/outlets/width_m", sw.outlets.width_m);
 writeArray(h5_path, "/surface_water/outlets/invert_elevation_m", sw.outlets.invert_elevation_m);
+for field = string(fieldnames(sw.coarse_river))'
+    writeArray(h5_path, "/surface_water/coarse_river/"+field, sw.coarse_river.(field));
+end
+writeArray(h5_path, "/surface_water/outlets/type_code", sw.outlets.type_code);
+writeArray(h5_path, "/surface_water/outlets/roughness", sw.outlets.roughness);
+writeArray(h5_path, "/surface_water/outlets/slope", sw.outlets.slope);
 if preparation.metadata.scenario == "post_dam"
     writeArray(h5_path, "/surface_water/dam/crest_elevation_m", sw.dam.crest_elevation_m);
     writeArray(h5_path, "/surface_water/dam/maximum_lake_extent_stage_m", sw.dam.maximum_lake_extent_stage_m);
@@ -113,7 +120,8 @@ fields = fieldnames(mf6);
 for i = 1:numel(fields), writeArray(h5_path, "/mf6_parameters/" + fields{i}, mf6.(fields{i})); end
 
 manifest = struct();
-manifest.schema_version = "bdam-preparation-hdf5-v5";
+manifest.model_version = "0.2.0";
+manifest.schema_version = "bdam-preparation-hdf5-v6";
 manifest.scenario = char(preparation.metadata.scenario);
 manifest.units = char(preparation.metadata.units);
 manifest.time_resolution = char(preparation.parameters.calendar.resolution);
@@ -121,14 +129,15 @@ manifest.calendar_basis = char(preparation.parameters.forcing.calendar_basis);
 manifest.native_array_order = "MATLAB [x,y,layer], flattened column-major; see companion shape datasets";
 manifest.grid_shape = size(g.ZTop);
 manifest.n_lakes = numel(sw.lakes);
+manifest.coarse_river = sw.coarse_river;
 manifest.n_outlets = height(sw.outlets);
 manifest.groundwater_boundary_mode = char(b.downstream);
-manifest.boundary_assumptions = "Local terrain-based discharge threshold or explicit constant GHB assumption; effective C=K*A/L resistance; independent free WEIR outlet; no inferred remote heads/stages";
+manifest.boundary_assumptions = "Local terrain-based discharge threshold or explicit constant GHB assumption; effective C=K*A/L resistance; independent Manning river outlet; no inferred remote heads/stages";
 manifest.external_surface_outlet_invert_m = sw.outlets.invert_elevation_m(end);
 manifest.atmospheric_flux_formulation = "UZF land recharge/ET; LAK precipitation/evaporation; RCH and EVT prohibited";
 manifest.streamflow_forcing_source = char(preparation.parameters.forcing.synthetic_source);
 manifest.streamflow_hydrograph_file = char(preparation.parameters.forcing.hydrograph_file);
-manifest.lake_footprint_atmosphere_assumption = "Fixed maximum LAK connection footprints are excluded from layer-1 UZF even when locally above simulated stage";
+manifest.lake_footprint_atmosphere_assumption = "Full storage footprints excluded from layer-1 UZF; groundwater exchange footprint selected independently; dry storage footprint atmosphere remains omitted";
 manifest.treatment_only_input_names = cellstr(preparation.parameters.scenario.treatment_only_input_names);
 manifest.hdf5_file = "preparation_handoff.h5";
 manifest.source_script = "MakeInputs.m";

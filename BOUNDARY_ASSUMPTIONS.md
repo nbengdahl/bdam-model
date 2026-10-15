@@ -18,15 +18,15 @@ that any boundary is physically correct.
 | Drain elevation | Modeled downstream channel bed + `drain_elevation_above_outlet_bed_m` | bed + 0 m | Discharge threshold; simulated heads remain unknowns |
 | Optional constant GHB | Bed + `constant_ghb_head_above_outlet_bed_m` | bed + 0.10 m | Explicit assumed head; active only in `constant_ghb` mode |
 | Boundary conductance | `groundwater_boundary_k_m_per_day * cell_face_area / effective_resistance_length` | background K; resistance = domain length | Uncalibrated lumped resistance, not a remote control position |
-| External surface outlet | Bed + `external_outlet_height_above_bed_m` | bed + 0 m | Independent free WEIR discharge control, never a GHB head |
-| Initial river stage | Bed + `initial_river_depth_above_outlet_bed_m` | bed + 0.10 m | Initial condition only; lake stage then evolves |
+| External surface outlet | Bed + `external_outlet_height_above_bed_m` | bed + 0 m | Independent Manning discharge control, never a GHB head |
+| Initial river stage | Each pool's lowest bed + 0.10 m | local bed + 0.10 m | Initial condition only; later stages evolve |
 
 All boundaries are located on the low-elevation longitudinal model edge.
 Only cells whose bottoms lie below the selected reference level are eligible.
 All transverse columns must be represented. The constant GHB and DRN levels
 stay fixed through relaxation, spinup and all monitored years; changing
 upstream inflow cannot change them. There is no exported or unused remote
-river-stage series. Handoff v5 stores mode, levels, resistance, conductance and
+river-stage series. Handoff v6 stores mode, levels, resistance, conductance and
 independent outlet inverts. Older handoffs require source regeneration.
 
 ## What remains assumed
@@ -36,13 +36,13 @@ independent outlet inverts. Older handoffs require source regeneration.
 - The default conductance uses full eligible cell-face areas and an effective
   resistance length of one domain length. This remains a conceptual response
   parameter; it is not an observation of geology beyond the model edge.
-- A WEIR at the modeled bed is an effective free-discharge approximation. Its
+- A Manning outlet at the modeled bed is an effective free-discharge approximation. Its
   width and optional height are still assumptions. It does not route a river
   outside the domain or calculate downstream backwater.
 - Upstream and lateral groundwater edges are no-flow. Regional lateral
   groundwater supply is therefore excluded and domain extent matters.
-- Each LAK feature has one stage. The single pre-dam river lake is not a
-  longitudinal stream-routing model. Fixed maximum footprints omit layer-1
+- Each coarse LAK pool has one stage. Manning transfers approximate a sloping
+  river without receiving-pool backwater feedback. Fixed maximum footprints omit layer-1
   UZF even where the simulated lake is locally dry, as already documented.
 - Synthetic inflow scaling, aquifer/lakebed properties, precipitation-to-
   infiltration partitioning and ET are assumptions independent of downstream

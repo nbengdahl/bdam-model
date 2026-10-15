@@ -45,7 +45,7 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
 The default is local outflow-only DRN; constant GHB is an explicit sensitivity
 option. Never infer downstream stages or groundwater heads from the upstream
 hydrograph, derive the surface outlet from a GHB head, or silently migrate old
-handoffs. Use v5 inputs regenerated in order. Preserve the selected mode,
+handoffs. Use v6 inputs regenerated in order. Preserve the selected mode,
 fixed local reference levels and independent surface outlet through every
 spinup/restart phase. Require `boundary_assumptions.json` and
 `bdam.groundwater_boundary_flux.csv` in each completed workspace. Gross
@@ -63,9 +63,9 @@ persists across restarts.
 
 ```zsh
 mkdir -p "$HOME/BDamRuns/bdam-run-YYYYMMDD"
-cp /absolute/path/to/BDam-v0.1.0.tar.gz \
-  "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.1.0.tar.gz"
-tar -xzf "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.1.0.tar.gz" \
+cp /absolute/path/to/BDam-v0.2.0.tar.gz \
+  "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.0.tar.gz"
+tar -xzf "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.0.tar.gz" \
   -C "$HOME/BDamRuns/bdam-run-YYYYMMDD"
 cd "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam"
 ```

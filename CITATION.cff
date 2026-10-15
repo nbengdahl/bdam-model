@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: "Engdahl"
     given-names: "Nick"
-version: 0.1.0
-date-released: 2026-08-24
+version: 0.2.0
+date-released: 2026-10-14
 url: "https://github.com/nbengdahl/bdam-model"
 repository-code: "https://github.com/nbengdahl/bdam-model"
 license: MIT

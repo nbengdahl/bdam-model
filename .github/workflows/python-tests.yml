@@ -26,4 +26,4 @@ jobs:
       - name: Run fast workflow tests
         env:
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
-        run: python -m unittest -v test_bdam_workflow.py
+        run: python -m unittest -v test_bdam_workflow.py test_coarse_river.py
