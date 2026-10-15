@@ -182,7 +182,7 @@ To inspect a completed simulation, launch the results viewer:
 LaunchBDamResultsViewerApp
 ```
 
-With no argument it preselects `~/BDamRuns/bdam-v0.2.0-20261014/BDam`, the verified release run.
+With no argument it preselects `~/BDamRuns/bdam-q0p1-20261015/BDam`, the validated 0.1 m3/s mean-inflow run.
 The viewer does not read any output until the user clicks Load. Pass another
 complete output root to preselect it when needed:
 

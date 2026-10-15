@@ -289,7 +289,7 @@ MATLAB while the package directory is current:
 LaunchBDamResultsViewerApp
 ```
 
-The default field is `~/BDamRuns/bdam-v0.2.0-20261014/BDam`. Launching or
+The default field is `~/BDamRuns/bdam-q0p1-20261015/BDam`. Launching or
 browsing only selects a folder; click Load before any output is read. To
 preselect another run, pass its complete output root:
 
@@ -301,6 +301,12 @@ The root must contain `Geometry/BDamGeometry.mat` and `Runs/`, including the
 monitored summary CSV and each completed workspace's `bdam.ic`, `bdam.hds`,
 and `monitoring_targets.csv`. Spinup outputs are required only when at least
 one spinup year was configured. The viewer never writes to these outputs.
+
+By default, six curves are selected: the four named channel groundwater-head
+monitors and Lake 1 and Lake 2 stages. The head monitors measure bottom-layer
+groundwater beneath the channel; the lake stages measure surface water.
+Pre-dam lakes are numbered upstream to downstream; after installation,
+Lake 1 is the pond and Lake 2 is the first downstream river pool.
 
 The upper panel shows the complete selected monitoring series and a moving
 current-time line. Any number of variables may be selected, but they may use
@@ -452,7 +458,7 @@ Lakebed leakance passed to MODFLOW is
 | Input | Default or form | Units | Meaning and requirement |
 |---|---:|---|---|
 | `pullman_monthly_precipitation_mm` | 12 monthly totals | mm/month | January–December precipitation; all values nonnegative |
-| `synthetic_mean_streamflow_m3_per_day` | 86.4 | m3/day | Annual mean upstream inflow used to scale the hydrograph shape |
+| `synthetic_mean_streamflow_m3_per_day` | 8640 | m3/day | Assumed annual mean upstream inflow of 0.1 m3/s (100 L/s), used to scale the hydrograph shape; not a measured Rose Creek calibration |
 | `usgs_hydrograph_file` | packaged CSV | path | Exactly 365 rows with `day_of_year` and positive `normalized_flow_factor` |
 | `synthetic_mean_land_et_m_per_day` | 0.0020 | m/day | Annual duration-weighted mean land ET |
 | `synthetic_land_et_monthly_factor` | 12 factors | relative | January–December ET shape; normalized internally |

@@ -10,7 +10,7 @@ end
 
 if strlength(string(outputRoot)) == 0
     outputRoot = fullfile(getenv("HOME"),"BDamRuns", ...
-        "bdam-v0.2.0-20261014","BDam");
+        "bdam-q0p1-20261015","BDam");
 end
 appFolder = fileparts(mfilename("fullpath"));
 if ~contains(path,appFolder)
