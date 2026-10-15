@@ -27,8 +27,8 @@ specific_storage = 1.0e-5;         % #User_Defined: [1/m]
 effective_porosity = 0.25;         % #User_Defined: [-], saturated groundwater-volume calculation
 K_constant = 0.03;                 % #User_Defined: [m/day], current horizontal validation baseline
 K33_constant = 0.003;              % #User_Defined: [m/day], current vertical validation baseline
-K_by_layer_top_to_bottom = []; % #User_Defined: [] resolves by member layer count; explicit array used only by_layer mode
-K33_by_layer_top_to_bottom = []; % #User_Defined: [] resolves by member layer count; explicit array used only by_layer mode
+K_by_layer_top_to_bottom = 0.03 * ones(1, n_layers); % #User_Defined: [m/day], used only by_layer mode
+K33_by_layer_top_to_bottom = 0.003 * ones(1, n_layers); % #User_Defined: [m/day], used only by_layer mode
 hydrofacies_points_file = "";      % #User_Defined: optional CSV, used only hydrofacies_points mode
 hydrofacies_points = table();       % #User_Defined: optional in-script interval table
 hydrofacies_fallback_id = 1;        % #User_Defined: class ID outside supplied intervals
@@ -40,12 +40,13 @@ hydrofacies_class_properties = table(1, 0.03, 0.003, ...
 channel_half_width_cells = 1;       % #User_Defined: channel cells each side of local DEM minimum
 lakebed_thickness_m = 0.25;         % #User_Defined: [m], effective vertical lakebed thickness
 lakebed_vertical_k_m_per_day = 0.05; % #User_Defined: [m/day], effective lakebed K
-ghb_k_mean_m_per_day = [];  % #User_Defined: [m/day], fixed K_mean in C=K_mean*A/L
-downstream_control_distance_in_domain_lengths = 1.0; % #User_Defined: control/GHB distance = this * domain length
-downstream_water_surface_slope_m_per_m = -0.005; % #User_Defined: stage gradient in the downstream flow direction [m/m]
-downstream_control_base_depth_m = 0.10; % #User_Defined: [m], stage above local channel bed at zero flow
-rating_curve_stage_range_m = 0.50; % #User_Defined: [m], annual low-to-high control-stage range
-rating_curve_exponent = 0.60;      % #User_Defined: h proportional to normalized Q^exponent
+groundwater_boundary_mode = "drain"; % #User_Defined: "drain" (outflow only) or "constant_ghb" (assumed bidirectional exchange)
+groundwater_boundary_k_m_per_day = []; % #User_Defined: [m/day], effective boundary K in C=K*A/L
+groundwater_boundary_resistance_in_domain_lengths = 1.0; % #User_Defined: effective resistance length/domain length; not a remote control location
+drain_elevation_above_outlet_bed_m = 0.0; % #User_Defined: [m], local discharge threshold relative to modeled outlet bed
+constant_ghb_head_above_outlet_bed_m = 0.10; % #User_Defined: [m], explicit assumed head, only used in constant_ghb mode
+external_outlet_height_above_bed_m = 0.0; % #User_Defined: [m], independent Manning outlet invert above modeled outlet bed
+initial_river_depth_above_outlet_bed_m = 0.10; % Legacy preparation preview; coarse pools initialize 0.10 m above their local low bed.
 forcing_interpolation = "STEPWISE"; % #User_Defined: MF6 time-series interpolation convention
 
 % Synthetic Pullman/Rose Creek-area climatology. NOAA Pullman 2 NW 1991--2020
@@ -73,17 +74,25 @@ mf6_parameters.uzf_extdp_m = 1.0; % #User_Defined: ET extinction depth [m]
 mf6_parameters.uzf_extwc = 0.10;  % #User_Defined: ET extinction water content [-]
 mf6_parameters.uzf_ntrailwaves = 7; % #User_Defined: MF6 UZF trailing-wave count
 mf6_parameters.uzf_nwavesets = 20; % #User_Defined: MF6 UZF numerical wave-set capacity
-mf6_parameters.external_weir_invert_depth_m = 0.05; % #User_Defined: below time-zero downstream control stage
 mf6_parameters.initial_head_channel_offset_m = 0.1; % #User_Defined: plane above downstream channel bottom [m]
-mf6_parameters.fall_average_spinup_years = 0; % #User_Defined: optional annual fall forcing; disabled for monthly-first spinup
-mf6_parameters.monthly_spinup_years = 5; % #User_Defined: monthly forcing; replaces three annual years, preserves seven-year total
-mf6_parameters.weekly_spinup_years = 2; % #User_Defined: varying weekly-average forcing years
+mf6_parameters.fall_average_spinup_years = 0; % #User_Defined: optional constant fall-average years; disabled for monthly-first spinup
+mf6_parameters.monthly_spinup_years = 4; % #User_Defined: varying monthly-average forcing years; replaces the two annual fall years
+mf6_parameters.weekly_spinup_years = 1; % #User_Defined: varying weekly-average forcing years
 mf6_parameters.pre_dam_years = 2; % #User_Defined: monitored annual years before dam installation
 mf6_parameters.post_dam_years = 2; % #User_Defined: monitored annual years after dam installation; zero is a no-dam run
 
+% Coarse river: two halves between the outlet and dam. Groundwater
+% connections on the upper pond walls are excluded; full DEM storage retained.
+river_settings = struct();
+river_settings.downstream_segments = 2; % #User_Defined: validated two-pool configuration
+river_settings.manning_width_m = 2.0; % #User_Defined: effective flowing-channel width [m]
+river_settings.manning_roughness = 0.04; % #User_Defined: effective Manning roughness
+river_settings.pond_exchange_height_above_thalweg_m = 1.25; % #User_Defined: pond bank connection cutoff [m]
+river_settings.river_storage_height_above_highest_bed_m = 0.50; % #User_Defined: connected river storage-table extent [m]
+
 % Native LAK sharp-weir controls. MF6 WEIR uses invert and effective width;
 % it does not expose a user discharge coefficient. Calibrate effective width.
-pre_dam_outlet_width_m = 1.0;       % #User_Defined: [m], effective downstream outlet width
+pre_dam_outlet_width_m = 1.0;       % Legacy intermediate placeholder; effective river width is river_settings.manning_width_m.
 post_dam_weir_width_m = 2.0;        % #User_Defined: [m], assumed active BDA crest width
 
 % Shared BDA representation settings. Dam orientation and crest height are
@@ -99,7 +108,7 @@ dam_settings.max_lake_extent_height_above_weir_m = 0.50; % #User_Defined: [m], r
 
 %% 2. Post-dam initial water level
 post_dam = struct();
-post_dam.initial_depth_above_dam_toe_m = 1.0; % #User_Defined: [m] above sampled dam toe
+post_dam.initial_depth_above_dam_toe_m = 1.0; % Legacy preview only; installation conserves surface volume.
 
 %% Sweep execution and forcing controls
 n_parallel_runs = 1; % #User_Defined: positive integer; never a sweep axis
@@ -133,12 +142,6 @@ config.hydrofacies_class_properties = hydrofacies_class_properties;
 config.channel_half_width_cells = channel_half_width_cells;
 config.lakebed_thickness_m = lakebed_thickness_m;
 config.lakebed_vertical_k_m_per_day = lakebed_vertical_k_m_per_day;
-config.ghb_k_mean_m_per_day = ghb_k_mean_m_per_day;
-config.downstream_control_distance_in_domain_lengths = downstream_control_distance_in_domain_lengths;
-config.downstream_water_surface_slope_m_per_m = downstream_water_surface_slope_m_per_m;
-config.downstream_control_base_depth_m = downstream_control_base_depth_m;
-config.rating_curve_stage_range_m = rating_curve_stage_range_m;
-config.rating_curve_exponent = rating_curve_exponent;
 config.forcing_interpolation = forcing_interpolation;
 config.pullman_monthly_precipitation_mm = pullman_monthly_precipitation_mm;
 config.synthetic_mean_streamflow_m3_per_day = synthetic_mean_streamflow_m3_per_day;
@@ -148,6 +151,14 @@ config.synthetic_land_et_monthly_factor = synthetic_land_et_monthly_factor;
 config.synthetic_recharge_fraction_of_precipitation = synthetic_recharge_fraction_of_precipitation;
 config.synthetic_recharge_monthly_factor = synthetic_recharge_monthly_factor;
 config.synthetic_lake_evaporation_fraction_of_land_et = synthetic_lake_evaporation_fraction_of_land_et;
+config.groundwater_boundary_mode = groundwater_boundary_mode;
+config.groundwater_boundary_k_m_per_day = groundwater_boundary_k_m_per_day;
+config.groundwater_boundary_resistance_in_domain_lengths = groundwater_boundary_resistance_in_domain_lengths;
+config.drain_elevation_above_outlet_bed_m = drain_elevation_above_outlet_bed_m;
+config.constant_ghb_head_above_outlet_bed_m = constant_ghb_head_above_outlet_bed_m;
+config.external_outlet_height_above_bed_m = external_outlet_height_above_bed_m;
+config.initial_river_depth_above_outlet_bed_m = initial_river_depth_above_outlet_bed_m;
+config.river_settings = river_settings;
 config.mf6_parameters = mf6_parameters;
 config.pre_dam_outlet_width_m = pre_dam_outlet_width_m;
 config.post_dam_weir_width_m = post_dam_weir_width_m;

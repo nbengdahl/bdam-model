@@ -30,11 +30,11 @@ def configuration():
     cfg = {}
     for name, value in SCHEMA["scalar_defaults"].items():
         put(cfg, name, value)
-    cfg.update(n_parallel_runs=1, time_resolution="weekly", forcing_interpolation="STEPWISE",
+    cfg.update(groundwater_boundary_mode="drain", pre_dam_outlet_width_m=1., initial_river_depth_above_outlet_bed_m=.1, post_dam={"initial_depth_above_dam_toe_m":1.}, n_parallel_runs=1, time_resolution="weekly", forcing_interpolation="STEPWISE",
                forcing_mode="periodic", hydraulic_conductivity_mode="constant", longitudinal_direction="y",
                source_geometry_file="Geometry/BDamGeometry.mat", usgs_hydrograph_file="usgs_13348000_hydrograph.csv",
                hydrofacies_points_file="", hydrofacies_points=[], hydrofacies_class_properties=[dict(hydrofacies_id=1,K_m_per_day=.03,K33_m_per_day=.003)],
-               K_by_layer_top_to_bottom=[], K33_by_layer_top_to_bottom=[], ghb_k_mean_m_per_day=[],
+               K_by_layer_top_to_bottom=[], K33_by_layer_top_to_bottom=[], groundwater_boundary_k_m_per_day=[],
                pullman_monthly_precipitation_mm=[67.8,49.3,52.1,49.8,46,31,11.2,12.2,16.5,45.7,66.5,70.4],
                synthetic_land_et_monthly_factor=[.18,.22,.4,.7,1.1,1.55,1.8,1.6,1.2,.7,.35,.2],
                synthetic_recharge_monthly_factor=[1.2,1.2,1.1,1,.85,.6,.25,.25,.45,.85,1.1,1.2])
@@ -121,10 +121,10 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(len(members),12)
         self.assertEqual(len(axes),3)
         self.assertEqual(len(baseline['pullman_monthly_precipitation_mm']),12)
-        self.assertTrue(all(m['ghb_k_mean_m_per_day']==m['K_constant'] for m in members))
+        self.assertTrue(all(m['groundwater_boundary_k_m_per_day']==m['K_constant'] for m in members))
 
     def test_dependent_defaults_and_explicit_ghb_axis(self):
-        cfg=configuration(); cfg['n_layers']=[3,5,7]; cfg['ghb_k_mean_m_per_day']=[.02,.03]
+        cfg=configuration(); cfg['n_layers']=[3,5,7]; cfg['groundwater_boundary_k_m_per_day']=[.02,.03]
         members,_,_=expand(cfg,SCHEMA['scalar_defaults'])
         self.assertEqual(len(members),6)
         for m in members: self.assertEqual(len(m['K_by_layer_top_to_bottom']),m['n_layers'])
@@ -224,8 +224,8 @@ class CampaignTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             write(Path(temp)/'resolved_config.json',resolve(configuration()))
             workspaces=expected_workspaces(temp)
-            self.assertEqual(len(workspaces),7)
-            self.assertEqual(workspaces[2],('spinup/staged','pre_dam',2190.,130))
+            self.assertEqual(len(workspaces),6)
+            self.assertEqual(workspaces[1],('spinup/staged','pre_dam',1460.,88))
             self.assertEqual([w[0] for w in workspaces[-4:]],['pre_dam/year_01','pre_dam/year_02','post_dam/year_01','post_dam/year_02'])
             cfg=resolve(configuration())
             for name in ('fall_average_spinup_years','monthly_spinup_years','weekly_spinup_years'):

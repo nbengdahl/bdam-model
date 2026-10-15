@@ -12,11 +12,18 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import numpy as np
+import h5py
+import flopy
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "bdam-matplotlib"))
 
 from build_bdam_simulation import (  # noqa: E402
     MONITORING_OUTPUTS,
+    _external_outlet_invert,
+    _build_groundwater_boundary,
+    _gross_budget_flows,
+    _groundwater_boundary_budget_term,
+    load_handoff,
     SOLVER_INNER_OUTPUT,
     SOLVER_OUTER_OUTPUT,
     SOLVER_STATS_OUTPUT,
@@ -40,6 +47,91 @@ from build_bdam_simulation import (  # noqa: E402
     _write_summary,
     run_from_handoff,
 )
+
+
+class LocalBoundaryTests(unittest.TestCase):
+    class Handoff:
+        def __init__(self, mode=0, level=0.0):
+            self.manifest = {"groundwater_boundary_mode": "drain" if mode == 0 else "constant_ghb"}
+            self.values = {
+                "/boundaries/groundwater/mode_code": np.array([mode]),
+                "/boundaries/groundwater/i_x": np.array([1, 2]),
+                "/boundaries/groundwater/i_y": np.array([1, 1]),
+                "/boundaries/groundwater/native_layer": np.array([1, 1]),
+                "/boundaries/groundwater/conductance_m2_per_day": np.array([0.03, 0.03]),
+                "/boundaries/groundwater/resistance_length_m": np.array([99., 99.]),
+                "/boundaries/local_outlet_bed_m": np.array([0.0]),
+                "/surface_water/outlets/invert_elevation_m": np.array([0.0]),
+                "/surface_water/outlets/width_m": np.array([1.0]),
+                "/grid/ZTop": np.ones((2, 2)),
+                "/grid/Z": np.stack((np.full((2, 2), -5.0), np.ones((2, 2))), axis=2),
+            }
+            self.levels = np.full((2, 2), level)
+
+        def array(self, path, dtype=float):
+            return np.asarray(self.values[path], dtype=dtype)
+
+        def scalar(self, path):
+            return float(self.array(path).ravel()[0])
+
+    def test_surface_outlet_does_not_read_groundwater_heads(self):
+        # No reference head dataset exists in this fake handoff; either mode
+        # still uses the independent terrain-based surface outlet.
+        for mode in (0, 1):
+            h = self.Handoff(mode=mode, level=12.0)
+            self.assertEqual(_external_outlet_invert(h), 0.0)
+        h.values["/surface_water/outlets/invert_elevation_m"] = np.array([np.nan])
+        with self.assertRaisesRegex(ValueError, "finite explicit invert"):
+            _external_outlet_invert(h)
+
+    def test_drain_has_no_general_head_package_and_constant_ghb_is_opt_in(self):
+        for mode, expected, absent in ((0, "DRN_DOWNSTREAM", "GHB_DOWNSTREAM"),
+                                       (1, "GHB_DOWNSTREAM", "DRN_DOWNSTREAM")):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                sim = flopy.mf6.MFSimulation(sim_ws=directory)
+                flopy.mf6.ModflowTdis(sim, nper=1, perioddata=[(365., 1, 1.)])
+                gwf = flopy.mf6.ModflowGwf(sim, modelname="boundary_test")
+                flopy.mf6.ModflowGwfdis(gwf, nlay=1, nrow=2, ncol=2, top=1., botm=-5.)
+                h = self.Handoff(mode)
+                _build_groundwater_boundary(gwf, h, np.array([0., 365.]), h.levels,
+                                            1, 2, Path(directory), True)
+                self.assertIsNotNone(gwf.get_package(expected))
+                self.assertIsNone(gwf.get_package(absent))
+                records = gwf.get_package(expected).stress_period_data.get_data(0)
+                np.testing.assert_equal(records["elev" if mode == 0 else "bhead"], 0.)
+                self.assertTrue((Path(directory) / "boundary_assumptions.json").is_file())
+
+    def test_time_varying_boundary_levels_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sim = flopy.mf6.MFSimulation(sim_ws=directory)
+            gwf = flopy.mf6.ModflowGwf(sim, modelname="boundary_test")
+            h = self.Handoff()
+            h.levels[:, 1] = 0.5
+            with self.assertRaisesRegex(ValueError, "fixed local levels"):
+                _build_groundwater_boundary(gwf, h, np.array([0., 365.]), h.levels,
+                                            1, 2, Path(directory), False)
+
+    def test_opposing_groundwater_flows_are_not_hidden(self):
+        class Budget:
+            def get_data(self, **kwargs):
+                return [np.array([(3.,), (-2.,)], dtype=[("q", float)]),
+                        np.array([(1.,), (-6.,)], dtype=[("q", float)])]
+        inflow, outflow = _gross_budget_flows(Budget(), "GHB", 365.)
+        self.assertEqual((inflow, outflow), (4., 8.))
+        self.assertEqual(inflow - outflow, -4.)
+
+    def test_mixed_boundary_packages_and_old_handoffs_fail_explicitly(self):
+        class Budget:
+            def get_unique_record_names(self):
+                return [b"GHB", b"DRN", b"LAK"]
+        with self.assertRaisesRegex(RuntimeError, "exactly one"):
+            _groundwater_boundary_budget_term(Budget())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "preparation_handoff.h5"
+            with h5py.File(path, "w") as h5:
+                h5.attrs["schema_version"] = "bdam-preparation-hdf5-v4"
+            with self.assertRaisesRegex(ValueError, "Regenerate geometry and paired inputs"):
+                load_handoff(path)
 
 
 class BDamWorkflowTests(unittest.TestCase):
@@ -77,7 +169,8 @@ class BDamWorkflowTests(unittest.TestCase):
         conservative = _solver_settings("conservative", save_inner_iterations=True)
         self.assertEqual(balanced["complexity"], "MODERATE")
         self.assertEqual(conservative["complexity"], "COMPLEX")
-        for settings in (balanced, conservative):
+        for settings in (balanced, balanced_initial, conservative):
+            self.assertEqual(settings["outer_maximum"], 2000)
             self.assertEqual(settings["outer_dvclose"], 1.0e-5)
             self.assertEqual(settings["inner_dvclose"], 1.0e-6)
             self.assertEqual(settings["rcloserecord"], "1e-6 strict")
@@ -86,9 +179,6 @@ class BDamWorkflowTests(unittest.TestCase):
         self.assertNotIn("csv_inner_output_filerecord", balanced)
         self.assertEqual(conservative["csv_inner_output_filerecord"], SOLVER_INNER_OUTPUT)
         self.assertEqual(balanced_initial["complexity"], "COMPLEX")
-        self.assertEqual(conservative["outer_maximum"], 2000)
-        self.assertEqual(balanced_initial["outer_maximum"], 2000)
-        self.assertEqual(balanced["outer_maximum"], 2000)
         with self.assertRaises(ValueError):
             _solver_settings("unknown")
 
@@ -120,8 +210,8 @@ class BDamWorkflowTests(unittest.TestCase):
             self.assertEqual(stats["solver_profile"], "balanced")
             self.assertEqual(stats["ims_complexity"], "COMPLEX")
             self.assertEqual(stats["solver_variant"], "robust_initialization")
-            self.assertEqual(stats["outer_maximum"], 2000)
             self.assertEqual(stats["mf6_version"], "6.7.0")
+            self.assertEqual(stats["outer_maximum"], 2000)
             self.assertEqual(stats["time_step_count"], 2)
             self.assertEqual(stats["total_outer_iterations"], 3)
             self.assertEqual(stats["total_inner_iterations"], 9)
@@ -135,6 +225,31 @@ class BDamWorkflowTests(unittest.TestCase):
             _validate_calendar(np.full(52, 7.0), np.ones(52, int), "weekly")
         with self.assertRaises(ValueError):
             _validate_calendar(np.ones(365), np.full(365, 2), "daily")
+
+    def test_monthly_first_spinup_preserves_five_years_without_annual_steps(self):
+        class Handoff:
+            def array(self, path, dtype=float):
+                if path == "/calendar/perlen_days":
+                    return np.full(52, 365. / 52.)
+                if path == "/forcing/time_days":
+                    return np.linspace(0., 365., 53)
+                if path == "/boundaries/groundwater/reference_level_m":
+                    return np.full((2, 53), 0.1)
+                return np.arange(53, dtype=float) + 1.
+        schedule, metadata = _staged_spinup_schedule(Handoff(), {
+            "fall_average_spinup_years": 0,
+            "monthly_spinup_years": 4,
+            "weekly_spinup_years": 1,
+        })
+        first, first_labels, remainder, labels = _split_first_spinup_year(schedule, metadata)
+        self.assertEqual(len(first.perlen_days), 12)
+        self.assertEqual(len(remainder.perlen_days), 88)
+        self.assertEqual(len(schedule.perlen_days), 100)
+        self.assertAlmostEqual(float(schedule.perlen_days.sum()), 1825.)
+        self.assertTrue(np.all(schedule.nstp == 1))
+        self.assertTrue(all(label.stage == "monthly" for label in first_labels))
+        self.assertFalse(any(label.stage == "fall_average" for label in metadata))
+        np.testing.assert_allclose(schedule.groundwater_reference_level_m, 0.1)
 
     def test_duration_weighted_weekly_means_preserve_annual_volume(self) -> None:
         daily_edges = np.arange(366, dtype=float)
@@ -160,8 +275,7 @@ class BDamWorkflowTests(unittest.TestCase):
                     "/forcing/land_et_m_per_day": endpoints + 3.0,
                     "/forcing/lake_precipitation_m_per_day": endpoints + 4.0,
                     "/forcing/lake_evaporation_m_per_day": endpoints + 5.0,
-                    "/boundaries/downstream_control_stage_m": endpoints + 10.0,
-                    "/boundaries/ghb/reference_head_m": np.asarray([
+                    "/boundaries/groundwater/reference_level_m": np.asarray([
                         endpoints + 20.0, endpoints + 30.0,
                     ]),
                 }
@@ -176,7 +290,7 @@ class BDamWorkflowTests(unittest.TestCase):
             [5.0, 5.0],
         )
         np.testing.assert_allclose(
-            schedule.ghb_reference_head_m[:, 0],
+            schedule.groundwater_reference_level_m[:, 0],
             [24.0, 34.0],
         )
 
@@ -204,8 +318,7 @@ class BDamWorkflowTests(unittest.TestCase):
                     "/forcing/land_et_m_per_day": endpoints + 3.0,
                     "/forcing/lake_precipitation_m_per_day": endpoints + 4.0,
                     "/forcing/lake_evaporation_m_per_day": endpoints + 5.0,
-                    "/boundaries/downstream_control_stage_m": endpoints + 10.0,
-                    "/boundaries/ghb/reference_head_m": np.vstack((
+                    "/boundaries/groundwater/reference_level_m": np.vstack((
                         endpoints + 20.0, endpoints + 30.0,
                     )),
                 }
@@ -221,10 +334,8 @@ class BDamWorkflowTests(unittest.TestCase):
             expected = np.mean(values[[13, 2, 3]])  # Sep, Oct, Nov monthly periods.
             np.testing.assert_allclose(values[:2], expected)
             np.testing.assert_allclose(relaxation.forcing[name], expected)
-        np.testing.assert_allclose(schedule.ghb_reference_head_m[:, :2],
-                                   relaxation.ghb_reference_head_m)
-        np.testing.assert_allclose(schedule.downstream_control_stage_m[:2],
-                                   relaxation.downstream_control_stage_m)
+        np.testing.assert_allclose(schedule.groundwater_reference_level_m[:, :2],
+                                   relaxation.groundwater_reference_level_m)
         self.assertEqual(len(schedule.perlen_days), 2 + 12 + 52)
         self.assertEqual(schedule.perlen_days[:2].tolist(), [365.0, 365.0])
         self.assertTrue(np.all(schedule.nstp == 1))

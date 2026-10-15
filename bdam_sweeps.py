@@ -26,7 +26,7 @@ except ImportError:  # Windows single-run compatibility; campaign locks use msvc
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-VERSION = "bdam-campaign-v1"
+VERSION = "bdam-campaign-v2"
 _LOCK_STATE = threading.local()
 
 
@@ -126,8 +126,8 @@ def resolve(config):
     for key, default in (("K_by_layer_top_to_bottom", .03), ("K33_by_layer_top_to_bottom", .003)):
         if config.get(key) is None or config[key] == []:
             config[key] = [default]*layers
-    if config.get("ghb_k_mean_m_per_day") is None or config["ghb_k_mean_m_per_day"] == []:
-        config["ghb_k_mean_m_per_day"] = config["K_constant"]
+    if config.get("groundwater_boundary_k_m_per_day") is None or config["groundwater_boundary_k_m_per_day"] == []:
+        config["groundwater_boundary_k_m_per_day"] = config["K_constant"]
     for driver in config["forcing_controls"].values():
         if driver["center_day"] == []:
             driver["center_day"] = None
@@ -156,8 +156,8 @@ def validate(config):
     if dam["leakage_n_top_layers"] > config["n_layers"]:
         raise ValueError("Dam leakage layer count exceeds n_layers.")
     positive = ("model_bottom_offset", "K_constant", "K33_constant", "specific_storage", "lakebed_thickness_m",
-                "lakebed_vertical_k_m_per_day", "ghb_k_mean_m_per_day", "downstream_control_distance_in_domain_lengths",
-                "rating_curve_stage_range_m", "rating_curve_exponent", "pre_dam_outlet_width_m", "post_dam_weir_width_m")
+                "lakebed_vertical_k_m_per_day", "groundwater_boundary_k_m_per_day", "groundwater_boundary_resistance_in_domain_lengths",
+                 "post_dam_weir_width_m")
     for name in positive:
         if config[name] <= 0:
             raise ValueError(f"{name} must be positive.")
@@ -174,19 +174,28 @@ def validate(config):
         raise ValueError("Unknown hydraulic conductivity mode.")
     if mf["uzf_eps"] <= 0 or not mf["uzf_thtr"] <= mf["uzf_extwc"] <= mf["uzf_thts"]:
         raise ValueError("Invalid UZF exponent or ET water content.")
-    if config.get("reference_mean_streamflow_m3_per_day",1) <= 0:
-        raise ValueError("The reference rating curve requires positive mean inflow.")
+    if config.get("groundwater_boundary_mode", "drain") not in ("drain", "constant_ghb"):
+        raise ValueError("Unknown groundwater boundary mode.")
+    for name in ("drain_elevation_above_outlet_bed_m", "constant_ghb_head_above_outlet_bed_m", "external_outlet_height_above_bed_m"):
+        if not math.isfinite(config[name]) or (name == "external_outlet_height_above_bed_m" and config[name] < 0):
+            raise ValueError(f"{name} must be finite; surface outlet height must be nonnegative.")
+    river = config["river_settings"]
+    if river["downstream_segments"] != 2:
+        raise ValueError("Only two downstream pools are supported.")
+    for name, value in river.items():
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"river_settings.{name} must be finite and positive.")
     if config["layer_growth_factor"] < 1:
         raise ValueError("layer_growth_factor must be >= 1.")
     if not 0 <= config["specific_yield"] <= 1 or not 0 < config["effective_porosity"] <= 1:
         raise ValueError("Invalid yield or effective porosity.")
     if not (0 <= mf["uzf_thtr"] < mf["uzf_thts"] <= 1 and mf["uzf_thtr"] <= mf["uzf_thti"] <= mf["uzf_thts"]):
         raise ValueError("Require thtr < thts and thti between the residual and saturated water contents.")
-    for name in ("initial_head_channel_offset_m", "uzf_surfdep_m", "uzf_extdp_m", "external_weir_invert_depth_m"):
+    for name in ("initial_head_channel_offset_m", "uzf_surfdep_m", "uzf_extdp_m", "uzf_extwc"):
         if mf[name] < 0:
             raise ValueError(f"mf6_parameters.{name} must be nonnegative.")
     for name in ("synthetic_mean_streamflow_m3_per_day", "synthetic_mean_land_et_m_per_day",
-                 "synthetic_recharge_fraction_of_precipitation", "synthetic_lake_evaporation_fraction_of_land_et", "downstream_control_base_depth_m"):
+                 "synthetic_recharge_fraction_of_precipitation", "synthetic_lake_evaporation_fraction_of_land_et"):
         if config[name] < 0:
             raise ValueError(f"{name} must be nonnegative.")
     for name in ("pullman_monthly_precipitation_mm", "synthetic_land_et_monthly_factor", "synthetic_recharge_monthly_factor"):
@@ -223,7 +232,7 @@ def expand(config, scalar_defaults, skip_baseline=False):
     for name, default in scalar_defaults.items():
         value = get(config, name)
         if value is None or value == []:
-            if default is None or name == "ghb_k_mean_m_per_day":
+            if default is None or name == "groundwater_boundary_k_m_per_day":
                 continue
             raise ValueError(f"{name} cannot be empty.")
         array = np.asarray(value)
@@ -296,7 +305,7 @@ def _plan(request, root, source, skip_baseline=False):
     scientific_input_hashes = dict(input_hashes)
     scientific_input_hashes["source_geometry_file"] = geometry_fingerprint(inputs["source_geometry_file"])
     model_names = {"bdam_forcing.py","build_bdam_simulation.py","prepareBDamMember.m",
-                   "makeBDamPeriodicForcing.m","ExportPreparationForFloPy.m"}
+                   "makeBDamPeriodicForcing.m","ExportPreparationForFloPy.m","makeCoarseRiverScenario.m"}
     model_hashes = {k:v for k,v in hashes.items() if k in model_names}
     runtime = runtime_provenance(source)
     root.mkdir(parents=True, exist_ok=True)

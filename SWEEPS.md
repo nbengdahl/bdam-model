@@ -1,6 +1,6 @@
 # Parameter sweeps and sensitivity runs
 
-This branch defaults to 70 x 140 cells at 1 m spacing, five layers, 0 fall-average / 5 monthly / 2 weekly spinup years (no initial seven-day
+This branch defaults to 70 x 140 cells at 1 m spacing, five layers, 0 fall-average / 4 monthly / 1 weekly spinup years (no initial seven-day
 relaxation with zero fall-average years), and
 two monitored pre-dam plus two post-dam years. These are starting settings;
 use interannual state changes to assess whether spinup is adequate.
@@ -25,11 +25,12 @@ values for fixed fields. Repeated candidate values are deduplicated.
 
 All registered numeric scalar parameters, including nested `mf6_parameters`,
 `dam_settings`, `post_dam` and forcing controls, accept candidate vectors.
+`river_settings` is included; `downstream_segments` must remain 2.
 Monthly climate vectors, layer-property vectors and hydrofacies tables keep
 their array meanings. Strings/paths are fixed inputs. `n_parallel_runs` must
 remain one positive integer. `[]` retains automatic defaults for optional
-centers, dam sample spacing, layer arrays and GHB conductivity. An empty GHB
-conductivity inherits each member's `K_constant`; explicit GHB candidates form
+centers, dam sample spacing, layer arrays and boundary conductivity. An empty
+`groundwater_boundary_k_m_per_day` inherits each member's `K_constant`; explicit boundary K candidates form
 an independent axis. Empty layer arrays are generated after selecting `n_layers`.
 
 ```zsh
@@ -99,7 +100,7 @@ may be waiting for a slot.
 `--reuse-baseline /path/to/completed/member/BDam` imports a completed reference
 only when source/input/configuration fingerprints and result validation match.
 Scheduling capacity and runtime paths do not change member identity. The
-reference rating curve can be prepared even when baseline simulation is omitted.
+boundary is local DRN by default and independent of inflow transformations.
 
 ## Periodic forcing and interpretation
 
@@ -128,10 +129,9 @@ The historical equal-month September/October/November fall average is retained.
 
 Land infiltration follows transformed precipitation and the existing calendar
 recharge factors; changing rain timing can therefore change annual infiltration.
-Lake evaporation follows transformed ET. The baseline downstream rating curve
-is held fixed across forcing variants with the same boundary configuration.
-Out-of-range linear extrapolation is reported; stages below the downstream bed
-are rejected. Every member uses its modified drivers throughout its own spinup
+Lake evaporation follows transformed ET. Local DRN elevations (or optional
+constant GHB heads) and independent Manning outlet inverts remain fixed across
+forcing variants with the same boundary configuration. Every member uses its modified drivers throughout its own spinup
 and monitored phases.
 
 `forcing_mode="legacy"` retains the original stepwise source construction and
@@ -165,8 +165,12 @@ MPLCONFIGDIR=/absolute/local/cache python3 -m unittest -v \
   test_bdam_workflow.py test_bdam_sweeps.py
 ```
 
-Pilot acceptance requires the full 0/5/2 + 2/2 baseline, then a small factorial
+Pilot acceptance requires the full 0/4/1 + 2/2 baseline, then a small factorial
 campaign run serially and with two active solvers. Compare scientific summary
 CSV values; timestamps and runtime logs are not scientific differences. Report
 water-balance QA, saved-step counts, runtime, memory, storage and interannual
 state changes. Random/interannual weather and distributed execution are deferred.
+
+## v0.2.0 migration
+
+New campaigns require schema v6 and campaign/parameter schema v2. Regenerate geometry and both handoffs. The river helper is included in scientific source fingerprints. Old remote-stage/rating controls have been removed; use the explicit local boundary controls in MakeInputs. Legacy preview width/depth controls are fixed intermediate placeholders, not sweep axes. Pond-bank cutoff, Manning width/roughness and storage extent are registered scalars. Losing/disconnected members and altered parameters require their own physical review even when numerical validation passes.

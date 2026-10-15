@@ -26,13 +26,13 @@ import h5py
 import numpy as np
 import flopy
 
-SCHEMA = "bdam-preparation-hdf5-v4"
+SCHEMA = "bdam-preparation-hdf5-v6"
 REQUIRED_BINARY_OUTPUTS = (
     "bdam.hds", "bdam.cbc", "bdam.lak.stage", "bdam.lak.bud",
     "bdam.uzf.wc", "bdam.uzf.bud",
 )
 MONITORING_OUTPUTS = (
-    "bdam.heads.csv", "bdam.lake_fluxes.csv", "bdam.ghb_flux.csv",
+    "bdam.heads.csv", "bdam.lake_fluxes.csv", "bdam.groundwater_boundary_flux.csv",
 )
 FLUX_OUTPUT = "bdam.fluxes.csv"
 SOLVER_OUTER_OUTPUT = "bdam.solver.outer.csv"
@@ -69,8 +69,7 @@ class RuntimeSchedule:
     nstp: np.ndarray
     time_days: np.ndarray
     forcing: dict[str, np.ndarray]
-    downstream_control_stage_m: np.ndarray
-    ghb_reference_head_m: np.ndarray
+    groundwater_reference_level_m: np.ndarray
 
 
 @dataclass
@@ -180,7 +179,7 @@ def _fall_average_period_values(source_edges: np.ndarray,
 
 
 def _exact_forcing_rates(handoff, calendar, fallback):
-    """Use optional conservative periodic integrals; accept legacy v4 handoffs."""
+    """Use optional conservative periodic integrals; accept native forcing when optional integrals are absent."""
     if not isinstance(handoff, Handoff):
         return fallback
     with h5py.File(handoff.path, "r") as stream:
@@ -195,7 +194,6 @@ def _exact_forcing_rates(handoff, calendar, fallback):
     if any(len(v) != expected or np.any(~np.isfinite(v)) or np.any(v < 0) for v in result.values()):
         raise ValueError(f"Invalid exact {calendar} forcing rates.")
     return result
-
 
 def _fall_average_forcing_schedule(handoff: Handoff, duration_days: float) -> RuntimeSchedule:
     """Build one transient period driven by September--November means."""
@@ -215,11 +213,9 @@ def _fall_average_forcing_schedule(handoff: Handoff, duration_days: float) -> Ru
     exact_monthly = _exact_forcing_rates(handoff, "monthly", {})
     if exact_monthly:
         forcing = {name: float(np.mean(values[[11, 0, 1]])) for name, values in exact_monthly.items()}
-    downstream = _fall_average_period_values(
-        source_edges, handoff.array("/boundaries/downstream_control_stage_m").ravel())
-    source_ghb = handoff.array("/boundaries/ghb/reference_head_m")
+    source_ghb = handoff.array("/boundaries/groundwater/reference_level_m")
     if source_ghb.ndim != 2 or source_ghb.shape[1] != len(source_perlen) + 1:
-        raise ValueError("GHB endpoint series does not match the source calendar.")
+        raise ValueError("Groundwater-boundary endpoint series does not match the source calendar.")
     ghb = np.asarray([
         _fall_average_period_values(source_edges, row) for row in source_ghb
     ], dtype=float)
@@ -228,8 +224,7 @@ def _fall_average_forcing_schedule(handoff: Handoff, duration_days: float) -> Ru
         nstp=np.ones(1, dtype=int),
         time_days=np.asarray([0.0, duration_days], dtype=float),
         forcing={name: np.repeat(value, 2) for name, value in forcing.items()},
-        downstream_control_stage_m=np.repeat(downstream, 2),
-        ghb_reference_head_m=np.repeat(ghb[:, np.newaxis], 2, axis=1),
+        groundwater_reference_level_m=np.repeat(ghb[:, np.newaxis], 2, axis=1),
     )
 
 
@@ -245,10 +240,9 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
         "lake_precipitation_m_per_day", "lake_evaporation_m_per_day",
     )
     source_forcing = {name: handoff.array(f"/forcing/{name}").ravel() for name in forcing_names}
-    source_downstream = handoff.array("/boundaries/downstream_control_stage_m").ravel()
-    source_ghb = handoff.array("/boundaries/ghb/reference_head_m")
+    source_ghb = handoff.array("/boundaries/groundwater/reference_level_m")
     if source_ghb.ndim != 2 or source_ghb.shape[1] != len(source_edges):
-        raise ValueError("GHB endpoint series does not match the source calendar.")
+        raise ValueError("Groundwater-boundary endpoint series does not match the source calendar.")
 
     # Model time begins on October 1. These are October--September month
     # lengths; source series have already been circularly shifted by MATLAB.
@@ -265,8 +259,6 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
     }
     monthly_forcing = _exact_forcing_rates(handoff, "monthly", monthly_forcing)
     weekly_forcing = _exact_forcing_rates(handoff, "weekly", weekly_forcing)
-    monthly_downstream = _resample_period_values(source_edges, source_downstream, month_edges)
-    weekly_downstream = _resample_period_values(source_edges, source_downstream, week_edges)
     monthly_ghb = np.vstack([
         _resample_period_values(source_edges, row, month_edges) for row in source_ghb
     ])
@@ -276,18 +268,16 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
 
     perlen_parts: list[np.ndarray] = []
     forcing_parts = {name: [] for name in forcing_names}
-    downstream_parts: list[np.ndarray] = []
     ghb_parts: list[np.ndarray] = []
     metadata: list[SpinupStep] = []
 
     def append_year(stage: str, phase: str, year: int, perlen: np.ndarray,
-                    forcing_rates: dict[str, np.ndarray], downstream: np.ndarray,
+                    forcing_rates: dict[str, np.ndarray],
                     ghb: np.ndarray) -> None:
         perlen = np.asarray(perlen, dtype=float)
         perlen_parts.append(perlen)
         for name in forcing_names:
             forcing_parts[name].append(np.asarray(forcing_rates[name], dtype=float))
-        downstream_parts.append(np.asarray(downstream, dtype=float))
         ghb_parts.append(np.asarray(ghb, dtype=float))
         for endpoint in np.cumsum(perlen):
             metadata.append(SpinupStep(phase, stage, year, float((year - 1) * 365.0 + endpoint)))
@@ -297,24 +287,22 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
         name: np.asarray([float(np.mean(values[fall_months]))])
         for name, values in monthly_forcing.items()
     }
-    fall_downstream = np.asarray([float(np.mean(monthly_downstream[fall_months]))])
     fall_ghb = np.mean(monthly_ghb[:, fall_months], axis=1, keepdims=True)
     for year in range(1, counts["fall_average_spinup_years"] + 1):
         append_year("fall_average", "spinup_fall_average", year, np.asarray([365.0]),
-                    fall_forcing, fall_downstream, fall_ghb)
+                    fall_forcing, fall_ghb)
     for year in range(1, counts["monthly_spinup_years"] + 1):
         append_year("monthly", "spinup_monthly", year, month_lengths,
-                    monthly_forcing, monthly_downstream, monthly_ghb)
+                    monthly_forcing, monthly_ghb)
     weekly_lengths = np.diff(week_edges)
     for year in range(1, counts["weekly_spinup_years"] + 1):
         append_year("weekly", "spinup_weekly", year, weekly_lengths,
-                    weekly_forcing, weekly_downstream, weekly_ghb)
+                    weekly_forcing, weekly_ghb)
     if not metadata:
         raise ValueError("A staged spinup schedule requires at least one configured spinup year.")
 
     perlen = np.concatenate(perlen_parts)
     rates = {name: np.concatenate(parts) for name, parts in forcing_parts.items()}
-    downstream = np.concatenate(downstream_parts)
     ghb = np.concatenate(ghb_parts, axis=1)
     time = np.concatenate(([0.0], np.cumsum(perlen)))
     schedule = RuntimeSchedule(
@@ -322,8 +310,7 @@ def _staged_spinup_schedule(handoff: Handoff, counts: dict[str, int]) -> tuple[R
         nstp=np.ones(len(perlen), dtype=int),
         time_days=time,
         forcing={name: np.concatenate((values, values[-1:])) for name, values in rates.items()},
-        downstream_control_stage_m=np.concatenate((downstream, downstream[-1:])),
-        ghb_reference_head_m=np.concatenate((ghb, ghb[:, -1:]), axis=1),
+        groundwater_reference_level_m=np.concatenate((ghb, ghb[:, -1:]), axis=1),
     )
     if len(metadata) != len(perlen) or not np.isclose(np.sum(perlen), 365.0 * sum(counts.values())):
         raise RuntimeError("Staged spinup schedule dimensions or total duration are inconsistent.")
@@ -343,10 +330,8 @@ def _slice_runtime_schedule(schedule: RuntimeSchedule, start: int, stop: int) ->
             name: np.asarray(values[start:stop + 1], dtype=float)
             for name, values in schedule.forcing.items()
         },
-        downstream_control_stage_m=np.asarray(
-            schedule.downstream_control_stage_m[start:stop + 1], dtype=float),
-        ghb_reference_head_m=np.asarray(
-            schedule.ghb_reference_head_m[:, start:stop + 1], dtype=float),
+        groundwater_reference_level_m=np.asarray(
+            schedule.groundwater_reference_level_m[:, start:stop + 1], dtype=float),
     )
 
 
@@ -386,8 +371,13 @@ def load_handoff(h5_path: Path) -> Handoff:
             manifest = {key: attribute_text(value) for key, value in h5.attrs.items()}
             if "monitoring_head_point_names_json" in manifest:
                 manifest["monitoring_head_point_names"] = json.loads(manifest.pop("monitoring_head_point_names_json"))
+    with h5py.File(h5_path, "r") as h5:
+        group = "/surface_water/coarse_river"
+        if group + "/enabled/data" in h5:
+            manifest["coarse_river"] = {key: float(np.asarray(value["data"]).ravel()[0])
+                                                    for key, value in h5[group].items()}
     if manifest.get("schema_version") != SCHEMA:
-        raise ValueError(f"Unsupported handoff schema: {manifest.get('schema_version')!r}")
+        raise ValueError(f"Unsupported handoff schema: {manifest.get('schema_version')!r}. Regenerate geometry and paired inputs with the current MakeGrid.m and MakeInputs.m; legacy remote-stage boundary assumptions are not migrated silently.")
     if manifest.get("units") != "meters and days":
         raise ValueError("FloPy conversion requires the verified meters-and-days handoff.")
     return Handoff(h5_path, manifest)
@@ -419,7 +409,7 @@ def _required(h: Handoff) -> None:
     for path in (
         "/grid/X", "/grid/Y", "/grid/ZTop", "/grid/Z", "/properties/K", "/properties/K33",
         "/properties/K_background", "/properties/K33_background", "/properties/Porosity", "/calendar/perlen_days",
-        "/forcing/time_days", "/boundaries/ghb/reference_head_m", "/uzf/eligible_mask",
+        "/forcing/time_days", "/boundaries/groundwater/reference_level_m", "/uzf/eligible_mask",
         "/atmosphere/land_uzf_mask", "/atmosphere/lake_lak_mask",
         "/mf6_parameters/uzf_thtr", "/mf6_parameters/uzf_ntrailwaves",
         "/mf6_parameters/uzf_nwavesets", "/monitoring/head_points_requested_xy_layer",
@@ -429,9 +419,116 @@ def _required(h: Handoff) -> None:
         "/monitoring/head_points_resolved_layer_top_down", "/monitoring/head_points_resolved_xy",
         "/validation_zones/upstream_mask", "/validation_zones/downstream_mask",
         "/validation_zones/dam_endpoint_1_xy", "/validation_zones/dam_endpoint_2_xy",
-        "/surface_water/channel_mask",
+        "/surface_water/channel_mask", "/surface_water/outlets/invert_elevation_m",
+        "/boundaries/groundwater/mode_code", "/boundaries/local_outlet_bed_m",
     ):
         h.array(path)
+
+
+def _external_outlet_invert(handoff: Handoff) -> float:
+    """Read the independent local surface control; never infer it from heads."""
+    values = handoff.array("/surface_water/outlets/invert_elevation_m").ravel()
+    widths = handoff.array("/surface_water/outlets/width_m").ravel()
+    bed = handoff.scalar("/boundaries/local_outlet_bed_m")
+    if len(values) != len(widths) or not len(values) or np.any(~np.isfinite(values)):
+        raise ValueError("Every surface outlet requires a finite explicit invert; regenerate inputs.")
+    if not np.isfinite(bed) or values[-1] < bed - 1.0e-12:
+        raise ValueError("The free surface outlet must be at or above the modeled outlet bed.")
+    return float(values[-1])
+
+
+def _build_groundwater_boundary(gwf, handoff: Handoff, time: np.ndarray,
+                               levels: np.ndarray, nlay: int, nrow: int,
+                               workspace: Path, save_monitoring: bool) -> None:
+    """Build a local drain or explicitly assumed constant GHB, with provenance."""
+    code = handoff.scalar("/boundaries/groundwater/mode_code")
+    if code not in (0.0, 1.0):
+        raise ValueError("Groundwater mode code must be 0 (DRN) or 1 (constant GHB).")
+    mode = "drain" if code == 0 else "constant_ghb"
+    if handoff.manifest.get("groundwater_boundary_mode", mode) != mode:
+        raise ValueError("Groundwater boundary metadata and mode code disagree.")
+    base = "/boundaries/groundwater"
+    ix, iy, native = (handoff.array(f"{base}/{name}", int).ravel()
+                      for name in ("i_x", "i_y", "native_layer"))
+    conductance = handoff.array(f"{base}/conductance_m2_per_day").ravel()
+    ncol = handoff.array("/grid/ZTop").shape[0]
+    if not len(ix) or not (len(ix) == len(iy) == len(native) == len(conductance)):
+        raise ValueError("Groundwater boundary cell arrays are inconsistent or empty.")
+    if (np.any(~np.isfinite(conductance)) or np.any(conductance <= 0) or
+            np.any((ix < 1) | (ix > ncol)) or np.any((iy < 1) | (iy > nrow)) or
+            np.any((native < 1) | (native > nlay))):
+        raise ValueError("Groundwater boundary requires valid cells and positive finite conductance.")
+    if levels.shape != (len(ix), len(time)) or np.any(~np.isfinite(levels)):
+        raise ValueError("Groundwater reference levels must be finite [cell, time] values.")
+    if not np.allclose(levels, levels[:, :1], atol=1.0e-12, rtol=0.0):
+        raise ValueError("DRN and constant GHB require fixed local levels; hydrograph-derived heads are unsupported.")
+    cells = [mf_cell(k, x, y, nlay, nrow) for x, y, k in zip(ix, iy, native)]
+    if len(set(cells)) != len(cells):
+        raise ValueError("Groundwater boundary contains duplicate cells.")
+    bottom = mf3(handoff.array("/grid/Z")[:, :, :-1])
+    if any(levels[i, 0] <= bottom[cell] + 1.0e-6 for i, cell in enumerate(cells)):
+        raise ValueError("A groundwater-boundary reference level is at or below its cell bottom.")
+    term = "DRN" if code == 0 else "GHB"
+    records = [(cell, float(levels[i, 0]), float(conductance[i]), "downstream_groundwater")
+               for i, cell in enumerate(cells)]
+    constructor = flopy.mf6.ModflowGwfdrn if code == 0 else flopy.mf6.ModflowGwfghb
+    package = constructor(gwf, pname=f"{term}_DOWNSTREAM", maxbound=len(records),
+                          stress_period_data={0: records}, boundnames=True, save_flows=True)
+    if save_monitoring:
+        package.obs.initialize(digits=12, filename="bdam.groundwater_boundary.obs",
+            continuous={"bdam.groundwater_boundary_flux.csv": [
+                ("groundwater_boundary_net", term.lower(), "downstream_groundwater")]})
+    audit = {
+        "mode": mode, "mf6_package": term, "outflow_only": code == 0,
+        "local_outlet_bed_m": handoff.scalar("/boundaries/local_outlet_bed_m"),
+        "reference_level_min_m": float(np.min(levels)),
+        "reference_level_max_m": float(np.max(levels)),
+        "reference_levels_constant_in_time": True,
+        "cell_count": len(cells), "total_conductance_m2_per_day": float(np.sum(conductance)),
+        "effective_resistance_length_m": handoff.array(f"{base}/resistance_length_m").ravel().tolist(),
+        "external_surface_outlet_invert_m": _external_outlet_invert(handoff),
+        "external_surface_outlet_source": "independent modeled outlet bed plus explicit height",
+        "requires_remote_head_or_stage_data": False,
+        "specifies_assumed_groundwater_head": code == 1,
+        "surface_water_representation": (
+            "Coarse LAK river pools with Manning transfers; full-topography storage; pond-only upper-bank exchange trim."
+            if "coarse_river" in handoff.manifest else
+            "One stage per LAK feature; the pre-dam river is a lumped lake, not a routed sloping stream."),
+        "external_surface_outlet_type": "MANNING" if "coarse_river" in handoff.manifest else "WEIR",
+        "atmospheric_partition": "Full storage footprints excluded from surface UZF; groundwater connection masks may be narrower; dry storage footprints lack land atmospheric treatment.",
+        "limitations": "Uncalibrated boundary resistance; no external surface backwater. DRN excludes regional groundwater inflow. Test boundary mode, level, resistance and domain extent before interpreting local heads.",
+    }
+    (workspace / "boundary_assumptions.json").write_text(json.dumps(audit, indent=2) + "\n")
+    print(f"Boundary QA: {mode}; fixed local level {levels.min():.6g}--{levels.max():.6g} m; "
+          f"independent free surface outlet {_external_outlet_invert(handoff):.6g} m; "
+          "no remote stage series or upstream-flow-derived heads.")
+
+
+def _groundwater_boundary_budget_term(budget) -> str:
+    names = {v.decode().strip() if isinstance(v, bytes) else str(v).strip()
+             for v in budget.get_unique_record_names()}
+    active = names & {"GHB", "DRN"}
+    if len(active) != 1:
+        raise RuntimeError(f"Expected exactly one groundwater boundary (DRN or GHB); found {sorted(active)}.")
+    return active.pop()
+
+
+def _gross_budget_flows(budget, term: str, time: float) -> tuple[float, float]:
+    """Sum inflow and outflow by cell sign before netting any records."""
+    records = budget.get_data(text=term, totim=time)
+    if not records:
+        raise RuntimeError(f"Missing {term} boundary budget at time {time}.")
+    inflow = outflow = 0.0
+    for record in records:
+        names = getattr(record.dtype, "names", None)
+        if not names or "q" not in names:
+            raise RuntimeError(f"{term} boundary budget must contain cell-resolved q values.")
+        q = np.asarray(record["q"], dtype=float)
+        if np.any(~np.isfinite(q)):
+            raise RuntimeError(f"Nonfinite {term} boundary flow.")
+        inflow += float(q[q > 0].sum())
+        outflow -= float(q[q < 0].sum())
+    return inflow, outflow
 
 
 def uzf_cells(handoff: Handoff) -> list[tuple[int, int, int]]:
@@ -490,10 +587,10 @@ def _validate_lake_topology(h: Handoff, lakes: list[dict], top: np.ndarray) -> d
             raise ValueError(f"Lake {lake['number']} has no cells wetted at its initial stage.")
         dry_counts.append(int(np.count_nonzero(elevations > lake["stage"])))
     if h.manifest["scenario"] == "post_dam":
-        if len(lakes) != 2:
+        if len(lakes) != 2 and "coarse_river" not in h.manifest:
             raise ValueError("Post-dam handoff must contain exactly two lakes.")
         downstream_row = 0 if float(np.mean(top[0])) <= float(np.mean(top[-1])) else top.shape[0] - 1
-        if not any(row == downstream_row for _, row, _ in lakes[1]["cells"]):
+        if not any(row == downstream_row for _, row, _ in lakes[-1]["cells"]):
             raise ValueError("Downstream lake does not connect to the low-elevation downstream model edge.")
     return {"unique_lake_connections": len(seen), "dry_fixed_footprint_cells": dry_counts}
 
@@ -526,13 +623,13 @@ def _monitoring(h: Handoff, nlay: int, nrow: int, ncol: int, workspace: Path) ->
     (workspace / "monitoring_README.md").write_text(
         "# Monitoring outputs\n\n"
         "- `bdam.heads.csv` contains simulated groundwater heads in meters at the targets in `monitoring_targets.csv`.\n"
-        "- `bdam.lake_fluxes.csv` contains MF6 LAK observations. Rates are m3/day except `stage` (m), `volume` (m3), rainfall/evaporation (m/day), and `surface-area` (m2, if added later).\n"
-        "- Positive/negative signs are MF6's native conventions; `outlet1_flow` is the native LAK-to-LAK transfer in the post-dam model and the external outlet in the pre-dam model.\n"
-        "- `bdam.ghb_flux.csv` reports total downstream GHB exchange.\n"
+        "- `bdam.lake_fluxes.csv` contains MF6 LAK observations. All flux observations, including rainfall and evaporation, are volumetric rates in m3/day; stage is m, volume is m3, and surface-area is m2 if included. The rainfall/evaporation input forcing depths, separately stored in the handoff, are m/day.\n"
+        "- Positive/negative signs are MF6's native conventions. `outletN_flow` refers to native outlet N; the final outlet is external. In the coarse post-dam model, outlet 1 is the dam crest transfer. Native lake/outlet IDs are phase-dependent.\n"
+        "- `bdam.groundwater_boundary_flux.csv` reports signed net downstream groundwater-boundary exchange; boundary_assumptions.json records DRN or constant GHB, levels, conductance and independent surface outlet.\n"
         "- `bdam.fluxes.csv` contains coupled external inflow/outflow, atmospheric components, combined storage change, coupled residual, the separately named GWF listing totals, signed lake-to-groundwater exchange, and signed groundwater flow across the reference dam line at every saved step. Rates are m3/day and interval volumes are m3.\n"
-        "- Coupled inputs are land infiltration, lake precipitation, upstream surface inflow, and positive GHB inflow. Outputs are land ET, rejected infiltration, lake evaporation, external surface outflow/withdrawal, and GHB outflow. Internal LAK--GWF and LAK-to-LAK flow and storage terms are excluded from external totals.\n"
+        "- Coupled inputs are land infiltration, lake precipitation, upstream surface inflow, and gross groundwater-boundary inflow. Outputs are land ET, rejected infiltration, lake evaporation, external surface outflow/withdrawal, and gross groundwater-boundary outflow. Opposing cell flows are summed separately before aggregation. Internal LAK--GWF and LAK-to-LAK flow and storage terms are excluded from external totals.\n"
         "- `net_atmospheric_recharge` is infiltration plus lake precipitation minus land ET and lake evaporation. Positive `combined_storage_change` means increasing GWF+UZF+LAK storage; `coupled_mass_residual` is external net inflow minus storage change.\n"
-        "- Positive lake exchange is lake-to-groundwater; negative is groundwater-to-lake. Positive cross-dam flow is upstream-to-downstream. Before dam installation, lake1/lake2 denote the upstream/downstream portions of the single river divided at the reference dam line.\n"
+        "- Positive lake exchange is lake-to-groundwater; negative is groundwater-to-lake. Positive cross-dam flow is upstream-to-downstream. In derived flux summaries, lake1/lake2 aggregate all surface-water exchange upstream/downstream of the reference dam line in both phases. These geographic totals differ from the per-feature native LAK observation IDs. Native lake stage IDs also change at installation as upstream pools merge into the pond.\n"
         "- `bdam.cbc` and `bdam.water_balance.json` provide machine-readable model-budget accounting.\n"
     )
     return records
@@ -573,7 +670,7 @@ def _write_tab6(path: Path, table: np.ndarray) -> None:
         f.write("BEGIN DIMENSIONS\n")
         f.write(f"  NROW {len(table)}\n  NCOL 3\nEND DIMENSIONS\nBEGIN TABLE\n")
         for stage, volume, area in table:
-            f.write(f"  {stage:.12g} {volume:.12g} {area:.12g}\n")
+            f.write(f"  {stage:.18g} {volume:.18g} {area:.18g}\n")
         f.write("END TABLE\n")
 
 
@@ -602,9 +699,10 @@ def validate_lak_outlet_routes(lak_path: Path) -> None:
         1: [(1, 1, 0)],             # pre-dam lake -> external boundary
         2: [(1, 1, 2), (2, 2, 0)], # upstream lake -> downstream lake -> external boundary
     }
-    expected = expected_by_count.get(len(actual))
+    expected = ([(i + 1, i + 1, i + 2 if i + 1 < len(actual) else 0)
+                 for i in range(len(actual))] if len(actual) > 2 else expected_by_count.get(len(actual)))
     if expected is None:
-        raise ValueError(f"{lak_path}: expected one or two outlets, found {len(actual)}.")
+        raise ValueError(f"{lak_path}: expected a nonempty linear outlet chain, found {len(actual)}.")
     if actual != expected:
         raise ValueError(f"{lak_path}: invalid LAK outlet routing {actual}; expected {expected}.")
 
@@ -659,7 +757,13 @@ def _atmospheric_masks(h: Handoff, lakes: list[dict], nrow: int, ncol: int) -> t
         for lay, row, col in item["cells"]:
             if lay == 0:
                 lake_connections[row, col] = True
-    if not np.array_equal(lake, lake_connections):
+    if "coarse_river" in h.manifest:
+        storage = np.zeros_like(lake)
+        for item in lakes:
+            storage |= mf2(h.array(f"/surface_water/lakes/lake_{item['number']}/storage_footprint_mask", bool))
+        if not np.array_equal(lake, storage) or np.any(lake_connections & ~storage):
+            raise ValueError("Coarse river atmospheric/storage mask or exchange containment is inconsistent.")
+    elif not np.array_equal(lake, lake_connections):
         raise ValueError("LAK footprints and lake atmospheric mask are inconsistent.")
     return land, lake
 
@@ -736,15 +840,13 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
     forcing = {name: h.array(f"/forcing/{name}").ravel() for name in (
         "upstream_inflow_m3_per_day", "land_recharge_m_per_day", "land_et_m_per_day",
         "lake_precipitation_m_per_day", "lake_evaporation_m_per_day")}
-    downstream_stage = h.array("/boundaries/downstream_control_stage_m").ravel()
-    ghb_heads_override = h.array("/boundaries/ghb/reference_head_m")
+    ghb_heads_override = h.array("/boundaries/groundwater/reference_level_m")
     if runtime_schedule is not None:
         perlen = np.asarray(runtime_schedule.perlen_days, dtype=float).ravel()
         nstp = np.asarray(runtime_schedule.nstp, dtype=int).ravel()
         time = np.asarray(runtime_schedule.time_days, dtype=float).ravel()
         forcing = {name: np.asarray(runtime_schedule.forcing[name], dtype=float).ravel() for name in forcing}
-        downstream_stage = np.asarray(runtime_schedule.downstream_control_stage_m, dtype=float).ravel()
-        ghb_heads_override = np.asarray(runtime_schedule.ghb_reference_head_m, dtype=float)
+        ghb_heads_override = np.asarray(runtime_schedule.groundwater_reference_level_m, dtype=float)
         if len(perlen) != len(nstp) or np.any(perlen <= 0.0) or np.any(nstp < 1):
             raise ValueError("Runtime schedule requires positive, matching PERLEN/NSTP arrays.")
     if np.any(nstp != 1):
@@ -795,7 +897,7 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
             tabname = f"lake_{lake['number']}.tab"; _write_tab6(ws / tabname, lake["table"])
             tables.append((lake_id, tabname))
     widths = h.array("/surface_water/outlets/width_m").ravel()
-    external_invert = float(h.array("/boundaries/ghb/reference_head_m")[0, 0] - h.scalar("/mf6_parameters/external_weir_invert_depth_m"))
+    external_invert = _external_outlet_invert(h)
     # FloPy uses zero-based lake IDs; -1 serializes as MF6's external
     # receiver (lakeout = 0).  Do not use 0 for an external receiver: that
     # serializes as lake 1 and creates a self-routed outlet.
@@ -804,6 +906,16 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
         crest = h.scalar("/surface_water/dam/crest_elevation_m")
         outlets = [(0, 0, 1, "WEIR", crest, widths[0], 0.0, 0.0),
                    (1, 1, -1, "WEIR", external_invert, widths[1], 0.0, 0.0)]
+    if "coarse_river" in h.manifest:
+        codes = h.array("/surface_water/outlets/type_code", int).ravel()
+        inverts = h.array("/surface_water/outlets/invert_elevation_m").ravel()
+        rough = h.array("/surface_water/outlets/roughness").ravel()
+        slopes = h.array("/surface_water/outlets/slope").ravel()
+        if not all(len(v) == len(lakes) for v in (codes, inverts, widths, rough, slopes)):
+            raise ValueError("Coarse river outlet dimensions inconsistent.")
+        outlets = [(i, i, i + 1 if i + 1 < len(lakes) else -1,
+                    {1: "MANNING", 2: "WEIR"}[int(codes[i])], float(inverts[i]),
+                    float(widths[i]), float(rough[i]), float(slopes[i])) for i in range(len(lakes))]
     lak = flopy.mf6.ModflowGwflak(gwf, pname="LAK_MAIN", nlakes=len(lakes), noutlets=len(outlets), ntables=len(tables),
                                   packagedata=packagedata, connectiondata=connectiondata, tables=tables or None, outlets=outlets,
                                   surfdep=h.scalar("/mf6_parameters/uzf_surfdep_m"),
@@ -828,18 +940,7 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
         flopy.mf6.ModflowUtlobs(gwf, digits=12, filename="bdam.gwf.obs",
                                  continuous={"bdam.heads.csv": [(name, "HEAD", cell) for name, cell in head_monitors]})
 
-    ghb_i = h.array("/boundaries/ghb/i_x", int).ravel(); ghb_j = h.array("/boundaries/ghb/i_y", int).ravel(); ghb_k = h.array("/boundaries/ghb/native_layer", int).ravel()
-    ghb_c = h.array("/boundaries/ghb/conductance_m2_per_day").ravel(); ghb_heads = ghb_heads_override
-    if ghb_heads.shape != (len(ghb_i), len(time)):
-        raise ValueError("GHB head-series matrix must be [cell, time].")
-    ghb_names = [f"ghb_{i:04d}" for i in range(len(ghb_i))]
-    ghb_spd = [(mf_cell(k0, i0, j0, nlay, nrow), ghb_names[i], ghb_c[i], "downstream_ghb") for i, (i0, j0, k0) in enumerate(zip(ghb_i, ghb_j, ghb_k))]
-    ghb = flopy.mf6.ModflowGwfghb(gwf, pname="GHB_DOWNSTREAM", maxbound=len(ghb_spd),
-                                  stress_period_data={0: ghb_spd}, boundnames=True, save_flows=True)
-    _ts(ghb, "bdam.ghb.ts", ghb_names, time, [ghb_heads[i, :] for i in range(len(ghb_i))])
-    if save_monitoring:
-        ghb.obs.initialize(digits=12, filename="bdam.ghb.obs",
-                           continuous={"bdam.ghb_flux.csv": [("ghb_total", "ghb", "downstream_ghb")]})
+    _build_groundwater_boundary(gwf, h, time, ghb_heads_override, nlay, nrow, ws, save_monitoring)
 
     uzf_pd, uzf_period, atmosphere_qa = _uzf_records(h, nlay, nrow, ncol, k33, land_mask, lake_mask, initial_uzf_wc)
     ntrailwaves = _positive_integer(
@@ -937,9 +1038,9 @@ def _write_solver_stats(workspace: Path, solver_profile: str, ntrailwaves: int,
     stats = {
         "status": "normal_termination",
         "solver_profile": solver_profile,
+        "outer_maximum": ims_settings["outer_maximum"],
         "ims_complexity": ims_settings["complexity"],
         "solver_variant": "robust_initialization" if robust_initialization else "standard",
-        "outer_maximum": ims_settings["outer_maximum"],
         "outer_dvclose": 1.0e-5,
         "inner_dvclose": 1.0e-6,
         "inner_rclose": 1.0e-6,
@@ -1068,20 +1169,12 @@ def _lake_exchange_rates(record, shape: tuple[int, int, int], upstream: np.ndarr
         if not 0 <= node < int(np.prod(shape)):
             raise RuntimeError("GWF LAK budget contains an invalid groundwater node.")
         q = float(item["q"])
-        if scenario == "pre_dam":
+        if scenario == "pre_dam" or scenario == "post_dam":
             cell = np.unravel_index(node, shape)
             if bool(upstream[cell[1], cell[2]]):
                 lake1 += q
             else:
                 lake2 += q
-        else:
-            lake_number = int(item["node2"])
-            if lake_number == 1:
-                lake1 += q
-            elif lake_number == 2:
-                lake2 += q
-            else:
-                raise RuntimeError(f"Post-dam LAK budget references unexpected lake {lake_number}.")
     total = float(np.sum(record["q"]))
     tolerance = max(1.0e-10, abs(total) * 1.0e-10)
     if not np.isclose(lake1 + lake2, total, atol=tolerance, rtol=0.0):
@@ -1125,7 +1218,8 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
         "coupled_mass_residual", "gwf_budget_in_total", "gwf_budget_out_total",
         "gwf_budget_in_minus_out", "land_infiltration", "land_evapotranspiration",
         "lake_precipitation", "lake_evaporation", "net_atmospheric_recharge",
-        "surface_inflow", "surface_outflow", "ghb_inflow", "ghb_outflow",
+        "surface_inflow", "surface_outflow", "groundwater_boundary_inflow", "groundwater_boundary_outflow",
+        "ghb_inflow", "ghb_outflow", "drain_outflow",
         "rejected_infiltration", "lake1_to_groundwater", "lake2_to_groundwater",
         "groundwater_cross_dam_upstream_to_downstream",
     ]
@@ -1175,12 +1269,15 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
         withdrawal = -_budget_sum_at_time(lak_budget, "WITHDRAWAL", time)
         runoff = _budget_sum_at_time(lak_budget, "RUNOFF", time)
         constant = _budget_sum_at_time(lak_budget, "CONSTANT", time)
-        ghb_net = _budget_sum_at_time(cbc, "GHB", time)
-        ghb_in, ghb_out = max(ghb_net, 0.0), max(-ghb_net, 0.0)
+        boundary_term = _groundwater_boundary_budget_term(cbc)
+        boundary_in, boundary_out = _gross_budget_flows(cbc, boundary_term, time)
+        if boundary_term == "DRN" and boundary_in > 1.0e-12:
+            raise RuntimeError("Outflow-only DRN unexpectedly reports groundwater inflow.")
+        ghb_in, ghb_out = (boundary_in, boundary_out) if boundary_term == "GHB" else (0.0, 0.0)
         surface_in = lake_external_in + max(runoff, 0.0) + max(constant, 0.0)
         surface_out = lake_external_out + withdrawal + max(-runoff, 0.0) + max(-constant, 0.0)
-        total_in = infiltration + lake_rain + surface_in + ghb_in
-        total_out = land_et + rejected + lake_evap + surface_out + ghb_out
+        total_in = infiltration + lake_rain + surface_in + boundary_in
+        total_out = land_et + rejected + lake_evap + surface_out + boundary_out
         external_net = total_in - total_out
         native_storage = (
             _budget_sum_at_time(cbc, "STO-SS", time) +
@@ -1202,7 +1299,9 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
             "lake_precipitation": lake_rain, "lake_evaporation": lake_evap,
             "net_atmospheric_recharge": net_atmospheric,
             "surface_inflow": surface_in, "surface_outflow": surface_out,
+            "groundwater_boundary_inflow": boundary_in, "groundwater_boundary_outflow": boundary_out,
             "ghb_inflow": ghb_in, "ghb_outflow": ghb_out,
+            "drain_outflow": boundary_out if boundary_term == "DRN" else 0.0,
             "rejected_infiltration": rejected,
             "lake1_to_groundwater": lake1, "lake2_to_groundwater": lake2,
             "groundwater_cross_dam_upstream_to_downstream": cross_dam,
@@ -1255,7 +1354,7 @@ def _write_budget_qa(workspace: Path, discrepancy_tolerance_percent: float = 0.1
     cbc = flopy.utils.CellBudgetFile(workspace / "bdam.cbc", precision="double")
     available = {name.decode().strip() if isinstance(name, bytes) else str(name).strip()
                  for name in cbc.get_unique_record_names()}
-    expected_terms = {"GHB", "LAK", "UZF-GWRCH", "STO-SS", "STO-SY"}
+    expected_terms = {_groundwater_boundary_budget_term(cbc), "LAK", "UZF-GWRCH", "STO-SS", "STO-SY"}
     missing_terms = sorted(expected_terms - available)
     if missing_terms:
         raise RuntimeError(f"GWF budget is missing required terms: {missing_terms}; found {sorted(available)}")
@@ -1447,10 +1546,10 @@ def _period_rows(handoff: Handoff, run_workspace: Path, initial_heads: np.ndarra
             row[f"{name}_m"] = float(heads[int(layer) - 1, nrow - int(y), int(x) - 1])
         for number, stage in enumerate(lake_stages, 1):
             row[f"lake{number}_stage_m"] = float(stage)
-        ghb_records = cbc.get_data(text="GHB", totim=time)
-        if ghb_records:
-            record = ghb_records[0]
-            row["ghb_net_volume_m3"] = float(np.sum(record["q"])) * row["duration_days"]
+        boundary_term = _groundwater_boundary_budget_term(cbc)
+        boundary_in, boundary_out = _gross_budget_flows(cbc, boundary_term, time)
+        row["groundwater_boundary_net_volume_m3"] = (boundary_in - boundary_out) * row["duration_days"]
+        row["ghb_net_volume_m3"] = row["groundwater_boundary_net_volume_m3"] if boundary_term == "GHB" else 0.0
         flux = flux_rows[index]
         if not np.isclose(float(flux["time"]), time, atol=1.0e-8, rtol=0.0) or not np.isclose(
                 float(flux["duration_days"]), row["duration_days"], atol=1.0e-8, rtol=0.0):
@@ -1592,6 +1691,15 @@ def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_fi
                                   save_monitoring: bool) -> None:
     """Prove that a closed annual workspace is complete and restartable."""
     workspace = Path(workspace)
+    audit_path = workspace / "boundary_assumptions.json"
+    if not audit_path.is_file():
+        raise RuntimeError("Completed workspace is missing its boundary assumption audit.")
+    boundary_audit = json.loads(audit_path.read_text())
+    expected_mode = "drain" if handoff.scalar("/boundaries/groundwater/mode_code") == 0 else "constant_ghb"
+    if (boundary_audit.get("mode") != expected_mode or
+            not np.isclose(boundary_audit.get("external_surface_outlet_invert_m", np.nan),
+                           _external_outlet_invert(handoff), atol=1.0e-12, rtol=0.0)):
+        raise RuntimeError("Completed workspace boundary audit does not match its input contract.")
     listing = workspace / "mfsim.lst"
     if not listing.is_file() or "Normal termination of simulation." not in listing.read_text(errors="replace"):
         raise RuntimeError(f"Workspace does not contain a normal MF6 termination marker: {workspace}")
@@ -1757,6 +1865,43 @@ def _resolve_handoffs(path: str | Path) -> tuple[Path, Path, Path]:
     return root, pre, post
 
 
+def _coarse_restart_stages(pre: Handoff, post: Handoff, stages: np.ndarray, workspace: Path) -> np.ndarray:
+    """Conserve surface storage while upstream river pools merge into the pond."""
+    def table(h, i):
+        base = f"/surface_water/lakes/lake_{i}/stage_area_volume"
+        return h.array(base + "/stage_m").ravel(), h.array(base + "/volume_m3").ravel()
+    if stages is None:
+        stages = np.array([pre.scalar(f"/surface_water/lakes/lake_{i}/initial_stage_m")
+                           for i in range(1, int(pre.scalar("/surface_water/n_lakes")) + 1)])
+    stages = np.asarray(stages, dtype=float).ravel()
+    if len(stages) != int(pre.scalar("/surface_water/n_lakes")) or np.any(~np.isfinite(stages)):
+        raise ValueError("Invalid pre-dam restart stage count or values.")
+    for i, stage in enumerate(stages, 1):
+        z, v = table(pre, i)
+        if stage < z[0] or stage > z[-1]:
+            raise ValueError("Pre-dam restart stage outside storage table.")
+    before = [float(np.interp(st, *table(pre, i))) for i, st in enumerate(stages, 1)]
+    nd = int(post.scalar("/surface_water/coarse_river/downstream_segments"))
+    if nd != 2 or len(stages) <= nd or int(post.scalar("/surface_water/n_lakes")) != nd + 1:
+        raise ValueError("Inconsistent coarse river restart topology.")
+    target = [sum(before[:-nd]), *before[-nd:]]
+    result, after = [], []
+    for i, volume in enumerate(target, 1):
+        z, v = table(post, i)
+        if volume > v[-1] + 1e-8 or volume < v[0] - 1e-8:
+            raise ValueError("Restart surface volume outside post-dam storage table.")
+        # np.interp inversion handles flat zero-volume rows at the bottom.
+        stage = float(np.interp(volume, v, z))
+        result.append(stage); after.append(float(np.interp(stage, z, v)))
+    audit = {"before_volume_m3": sum(before), "after_volume_m3": sum(after),
+             "error_m3": sum(after) - sum(before), "post_stages_m": result,
+             "groundwater_heads_preserved": True, "common_uzf_features_mapped_by_cell": True}
+    if abs(audit["error_m3"]) > 1e-8:
+        raise ValueError("Non-conservative surface restart.")
+    (workspace / "dam_installation_storage_audit.json").write_text(json.dumps(audit, indent=2))
+    return np.asarray(result)
+
+
 def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
                      solver_profile: str = "balanced",
                      save_inner_iterations: bool = False,
@@ -1867,11 +2012,14 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
 
     if values["post_dam_years"]:
         # Dam installation changes only LAK/UZF topology. Groundwater heads are
-        # carried exactly; common UZF features are mapped by cell; and both new
-        # lakes inherit the final pre-dam river stage.
+        # carried exactly; common UZF features are mapped by cell; and the coarse
+        # surface-water restart conserves volume when upstream pools merge.
         inherited_stage = (float(stages[0]) if stages is not None else
                            pre.scalar("/surface_water/lakes/lake_1/initial_stage_m"))
-        stages = np.repeat(inherited_stage, int(post.scalar("/surface_water/n_lakes")))
+        if "coarse_river" in post.manifest:
+            stages = _coarse_restart_stages(pre, post, stages, workspace)
+        else:
+            stages = np.repeat(inherited_stage, int(post.scalar("/surface_water/n_lakes")))
         wc = _map_uzf_state(pre, post, wc)
     for year in range(1, values["post_dam_years"] + 1):
         run_ws = workspace / "post_dam" / f"year_{year:02d}"

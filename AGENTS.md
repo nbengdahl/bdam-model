@@ -28,11 +28,9 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
    has 52. Counts scale only with configured years (for example, 2/1/1 gives
    2 annual, 12 monthly, and 52 weekly outputs). The 7-day initial relaxation
    remains exactly 1 stress period, 1 time step, and 1 output.
-8. Independent campaign members may run concurrently, up to `n_parallel_runs`.
-   Launch campaigns through `bdam_sweeps.py run`; the runner owns campaign-wide
-   capacity slots and member claims. Never start a duplicate member or run two
-   models in the same output tree. Inspect existing processes to identify their
-   member/workspace; another independent campaign member is not a reason to stop.
+8. For standalone runs, before starting MODFLOW, check for an existing `build_bdam_simulation.py`
+   or `mf6` process. If another model run is active, stop and ask the user
+   whether it should remain active. Do not start a duplicate run.
 9. A quiet terminal does not mean the run is stuck. The runner captures MF6
    stdout. Check the active `bdam.lst`, file growth, and process activity.
 10. Do not restart a progressing run merely because it is quiet.
@@ -41,6 +39,19 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
 12. Work through routine environment restrictions without changing the model.
     Stop only when correctness is uncertain, a required dependency is truly
     unavailable, validation fails, or proceeding would require a model change.
+
+## Boundary contract
+
+The default is local outflow-only DRN; constant GHB is an explicit sensitivity
+option. Never infer downstream stages or groundwater heads from the upstream
+hydrograph, derive the surface outlet from a GHB head, or silently migrate old
+handoffs. Use v6 inputs regenerated in order. Preserve the selected mode,
+fixed local reference levels and independent surface outlet through every
+spinup/restart phase. Require `boundary_assumptions.json` and
+`bdam.groundwater_boundary_flux.csv` in each completed workspace. Gross
+groundwater-boundary inflow/outflow must be summed by cell sign before netting.
+See `BOUNDARY_ASSUMPTIONS.md`; numerical closure alone does not validate the
+physical boundary assumptions.
 
 ## Exact run procedure
 
@@ -52,9 +63,9 @@ persists across restarts.
 
 ```zsh
 mkdir -p "$HOME/BDamRuns/bdam-run-YYYYMMDD"
-cp /absolute/path/to/BDam-v0.1.0.tar.gz \
-  "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.1.0.tar.gz"
-tar -xzf "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.1.0.tar.gz" \
+cp /absolute/path/to/BDam-v0.2.0.tar.gz \
+  "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.0.tar.gz"
+tar -xzf "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.0.tar.gz" \
   -C "$HOME/BDamRuns/bdam-run-YYYYMMDD"
 cd "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam"
 ```
@@ -68,10 +79,9 @@ Check available local space before setup:
 df -h ..
 ```
 
-The branch default is 70 x 140 cells, 5 layers, 0/5/2 spinup years and 2/2
-monitored years. Reserve disk for all retained members plus simultaneous staging.
-The old 4 GB estimate applies to the smaller release benchmark, not this branch.
-Use the first full-output pilot to measure actual storage before a large campaign. Confirm that the selected home-directory path is on
+Reserve at least 4 GB for the current 0/4/1 monthly-first spinup plus weekly 1/1
+pre-/post-dam run. More is needed if
+backups will be retained. Confirm that the selected home-directory path is on
 a local disk and is not redirected into a synchronized or network folder.
 
 ### 2. Put MODFLOW in the local run tree
@@ -118,10 +128,9 @@ environment inside each BDam run.
 pgrep -fl 'build_bdam_simulation.py|mf6' || true
 ```
 
-Identify the run directory of each existing process. Independent campaign
-members are allowed under the campaign-wide `n_parallel_runs` limit. Do not
-launch the same member twice or kill another run. Use the campaign launcher
-rather than bypassing its member claims or capacity slots.
+If this shows another real model process, do not start. Identify its run
+directory and ask the user whether to wait for it or terminate it. Never kill
+an existing process without authorization.
 
 Some managed agent sandboxes do not allow `pgrep` to read the process list and
 may print `Cannot get process list` or a `sysmon` error. That is an environment
@@ -175,15 +184,17 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 
 Do not run this command a second time while the first process is active.
 
-When fall-average years are enabled, the 7-day September--November-average
-relaxation from planar initial conditions uses the robust COMPLEX initialization settings. The runner then
-uses the `conservative` profile only for the first modeled year (12 monthly periods with the default settings) and
+When fall-average spinup is explicitly enabled, its 7-day September--November-average relaxation from planar initial
+conditions uses the robust COMPLEX initialization settings. The runner then
+uses the `conservative` profile only for the first 365-day annual run and
 returns to the faster `balanced` profile for every subsequent run,
 including every remaining fall-average, monthly, and weekly part of staged
 spinup and all monitored pre-dam and post-dam years. The strict closure
-tolerances remain unchanged between profiles. Do not pass
+tolerances remain unchanged between profiles. Both profiles explicitly allow
+2000 outer iterations, extending the sweep allowance for shallow-lake convergence; this is
+an iteration allowance, not a change to closure or damping. Do not pass
 `--solver-profile conservative`; the runner manages the one conservative
-annual solve internally and prevents conservative settings from being applied
+first-year solve internally and prevents conservative settings from being applied
 globally. If MF6 specifically reports that UZF `NWAVESETS` must be increased, change
 `mf6_parameters.uzf_nwavesets` from 20 to 40 in `MakeInputs.m`, regenerate the
 paired handoffs, and rerun. Never increase wave sets automatically or alter
@@ -239,7 +250,7 @@ separate `Completed pre-dam` line. The new post-dam staging directory is the
 evidence that the pre-dam year was published successfully.
 
 Model time follows an October 1--September 30 water year. All forcing,
-downstream-stage, and GHB series must retain this alignment; elapsed model-time
+and any groundwater-boundary schedule must retain this alignment; elapsed model-time
 counters remain ordinary days from zero.
 
 If no files change and the `mf6` process uses no CPU across repeated checks,
@@ -248,21 +259,19 @@ then report the evidence. Do not change model settings or restart blindly.
 
 ## Completion checklist
 
-With the default zero fall-average years, spinup/initial_relaxation is absent.
-The historical spinup/first_annual workspace contains 12 monthly periods.
-Both IMS profiles allow 2000 outer iterations with unchanged closures.
-
-The default staged-spinup plus weekly pre-/post-dam run should produce these directories:
+The monthly-first spinup plus weekly pre-/post-dam run should produce these directories (additional monitored years add their own year folders):
 
 ```text
-Runs/spinup/initial_relaxation
 Runs/spinup/first_annual
 Runs/spinup/staged
 Runs/pre_dam/year_01
-Runs/pre_dam/year_02
 Runs/post_dam/year_01
-Runs/post_dam/year_02
 ```
+
+With zero fall-average years, `spinup/initial_relaxation` is absent. The
+historical `first_annual` directory contains the first 365-day year using 12
+monthly periods. Enabling fall-average years adds the separate 7-day
+`initial_relaxation` workspace and the configured annual fall steps.
 
 For every completed workspace, verify all of the following:
 
@@ -286,7 +295,7 @@ The runner may exit without printing a final celebratory message. Exit status
 zero plus the complete validation checklist is success. Do not require an
 extra phrase that the runner does not promise to print.
 
-The smaller release benchmark used about 2.1 GB; measure this branch pilot. Report the
+The default run is expected to use about 2.1 GB in `Runs`. Report the
 absolute run and output paths, configuration, dependency versions, tests,
 completion checks, warnings, and any retained diagnostic staging directory.
 
@@ -295,7 +304,7 @@ completion checks, warnings, and any retained diagnostic staging directory.
 - Running inside the project’s Google Drive folder.
 - Starting another run because the terminal is quiet.
 - Watching `mfsim.lst` instead of the active `bdam.lst`.
-- Bypassing `n_parallel_runs` or starting duplicate members in shared workspaces.
+- Running several copies of MODFLOW and making all of them slow.
 - Treating a nonfatal Matplotlib cache warning as a model failure. Set
   `MPLCONFIGDIR` as shown above.
 - Treating an empty `Runs` directory during staging as a failure.
@@ -318,7 +327,7 @@ Use this order. Do not jump directly to changing source code or model inputs.
 | Active staging directory temporarily lacks `bdam.lst` | Treat it as a possible annual transition and repeat the guarded check shortly. |
 | `Runs` is empty while MF6 is active and staging files grow | Continue monitoring; publication happens only after annual validation. |
 | Required test fails, MATLAB reports a script/model assertion, MF6 exits nonzero, a required output is unreadable, final time is not 365 days, or water balance does not pass | Stop. Preserve the diagnostic staging workspace and report exact evidence. Do not alter physics, calendar, solver rules, or validation. |
-| First 365-day annual solve needs the more robust IMS profile | The runner applies `conservative` only to that annual solve and automatically resumes every remaining staged-spinup and monitored solve with `balanced`; never apply `conservative` globally. |
+| First 365-day annual solve needs the more robust IMS profile | The runner applies `conservative` only to that first-year solve and automatically resumes every remaining staged-spinup and monitored solve with `balanced`; never apply `conservative` globally. |
 | MF6 reports that UZF `NWAVESETS` must be increased | Change the user-defined value from 20 to 40, regenerate both handoffs with `MakeInputs.m`, and rerun. Increase further only if MF6 repeats the same error. |
 
 ## Reproducibility comparisons

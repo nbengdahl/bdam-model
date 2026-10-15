@@ -1,10 +1,16 @@
-> **Parameter-sweeps branch:** defaults are 70 x 140 cells at 1 m spacing,
-> 5 groundwater layers, 0/5/2 staged spinup and 2 pre-dam + 2 post-dam years.
-> For Cartesian sweeps, periodic forcing and parallel runs, follow [SWEEPS.md](SWEEPS.md).
-> Historical release runtime/disk estimates below apply to the smaller benchmark;
-> measure the larger branch pilot before sizing an ensemble.
-
 # BDam model end-user quick-start manual
+
+## River formulation (v0.2.0)
+
+The default uses coarse Manning-connected LAK river pools: eight before the dam,
+then one pond and two downstream pools on the default terrain. Upper pond banks
+are excluded from groundwater exchange, while full connected topography supplies
+storage. Installation conserves surface volume. See [RIVER_REFINEMENTS.md](RIVER_REFINEMENTS.md)
+for settings, validation evidence, observation meanings and remaining limitations.
+The current workflow is 0 fall / 4 monthly / 1 weekly spinup years and two weekly
+pre-dam plus two post-dam years. Historical timing/head benchmarks below describe
+earlier formulations and are retained only as historical evidence.
+
 
 ## Purpose
 
@@ -126,9 +132,9 @@ path consistently in the commands below and keep the same folder layout.
 
 ```zsh
 mkdir -p "$HOME/BDamRuns/bdam-run-mycase"
-cp /path/to/BDam-v0.1.0.tar.gz \
-  "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.1.0.tar.gz"
-tar -xzf "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.1.0.tar.gz" \
+cp /path/to/BDam-v0.2.0.tar.gz \
+  "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.0.tar.gz"
+tar -xzf "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.0.tar.gz" \
   -C "$HOME/BDamRuns/bdam-run-mycase"
 cd "$HOME/BDamRuns/bdam-run-mycase/BDam"
 ```
@@ -171,7 +177,7 @@ Review the MATLAB figures and console summaries. Confirm at least:
 - channel and lake masks occupy the expected cells;
 - the dam crosses the channel at the intended station;
 - both post-dam lakes exist and do not overlap;
-- the downstream GHB lies on the low-elevation model edge;
+- the downstream groundwater boundary lies on the low-elevation model edge;
 - layer-1 UZF is absent beneath fixed LAK footprints;
 - post-dam BDA K/K33 changes are limited to the intended under-dam band.
 
@@ -185,9 +191,9 @@ coupling footprint.
 pgrep -fl 'build_bdam_simulation.py|mf6' || true
 ```
 
-Identify the active member directories. Independent campaign members may run
-concurrently under `n_parallel_runs`; do not start a duplicate member or use a
-shared output tree. Use `bdam_sweeps.py run` for coordinated execution.
+Do not start a second run if another real BDam Python or `mf6` process is
+active. Decide whether to wait or stop it; never terminate someone else's run
+without authorization.
 
 ### 5. Run and log the model
 
@@ -200,8 +206,8 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
 ```
 
 The default sequence is one 7-day relaxation at September--November-average
-forcing, three fall-average spinup years, two monthly spinup years, two weekly
-spinup years, two monitored pre-dam years, and two monitored post-dam years. The relaxation runs
+forcing, one fall-average spinup year, one monthly spinup year, one weekly spinup year, one
+monitored pre-dam year, and one monitored post-dam year. The relaxation runs
 only when at least one fall-average spinup year is configured, and its final
 groundwater, lake, and UZF state initializes the fall-average year. A quiet
 terminal is normal because MF6 output is captured. Live progress is written to
@@ -220,8 +226,8 @@ years. A monthly spinup year must be configured. Omit the flag for a full run;
 the runner preserves the diagnostic outputs in its usual timestamped backup.
 
 The runner uses robust MF6 `COMPLEX` settings for the relaxation from
-planar initial conditions and for only the first modeled year (12 monthly periods with the default settings).
-That annual solve uses the `conservative` profile. Every remaining staged
+planar initial conditions and for only the first modeled year.
+That first-year solve uses the `conservative` profile. Every remaining staged
 spinup and monitored solve returns to the faster `balanced` profile and its
 `MODERATE` preset, always with the same strict convergence tolerances. With no
 spinup, the first monitored annual solve is conservative and later solves are
@@ -229,13 +235,6 @@ balanced. The runner prevents conservative settings from being selected for
 the whole workflow. Add
 `--solver-inner-output` only when detailed inner-iteration diagnostics are
 needed.
-
-Both profiles explicitly allow up to 2000 nonlinear outer iterations.
-The new grid/layer configuration exceeds the preset limits of 100 (COMPLEX) for the first
-annual dry-cell adjustment and 50 (MODERATE) for the next annual step.
-This changes the iteration allowance,
-with the existing presets, strict closure tolerances and one-step periods
-preserved. Solver statistics record the effective `outer_maximum`.
 
 On the packaged benchmark, the 20-wave balanced production solves took about
 68--72 seconds instead of 129--135 seconds and reduced MF6's reported
@@ -250,9 +249,7 @@ Runs/spinup/initial_relaxation/
 Runs/spinup/first_annual/
 Runs/spinup/staged/
 Runs/pre_dam/year_01/
-Runs/pre_dam/year_02/
 Runs/post_dam/year_01/
-Runs/post_dam/year_02/
 Runs/spinup_summary.csv
 Runs/weekly_summary.csv
 ```
@@ -364,8 +361,8 @@ order is left side followed by right side.
 |---|---:|---|---|
 | `vertical_offset_m` | 0.25 | m | Floodplain step above the outer channel banks; nonnegative |
 | `dam_max_m` | 1.5 | m | BDA crest height above the sampled dam toe; nonnegative |
-| `domain_length_x_m` | 70 | m | Transverse domain width; positive and divisible by `spacing_x_m` |
-| `domain_length_y_m` | 140 | m | Projected channel-reach length; positive and divisible by `spacing_y_m` |
+| `domain_length_x_m` | 50 | m | Transverse domain width; positive and divisible by `spacing_x_m` |
+| `domain_length_y_m` | 100 | m | Projected channel-reach length; positive and divisible by `spacing_y_m` |
 | `spacing_x_m` | 1 | m | X cell width; positive |
 | `spacing_y_m` | 1 | m | Y cell width; positive |
 | `origin_x_m` | 0 | m | Minimum-X domain-edge coordinate |
@@ -421,15 +418,29 @@ nearest-point classification, not geostatistical interpolation.
 | `channel_half_width_cells` | 1 | cells | Adds this many cells on each side of each cross-section's DEM minimum |
 | `lakebed_thickness_m` | 0.25 | m | Effective thickness controlling vertical LAK–groundwater leakage; positive |
 | `lakebed_vertical_k_m_per_day` | 0.05 | m/day | Effective lakebed vertical K; positive |
-| `ghb_k_mean_m_per_day` | `K_constant` | m/day | K used in downstream GHB conductance `C = K A/L`; positive |
-| `downstream_control_distance_in_domain_lengths` | 1.0 | ratio | External control distance divided by modeled reach length; positive |
-| `downstream_water_surface_slope_m_per_m` | -0.005 | m/m | External water-surface gradient in downstream flow direction |
-| `downstream_control_base_depth_m` | 0.10 | m | Downstream control depth above local channel bed at minimum flow |
-| `rating_curve_stage_range_m` | 0.50 | m | Difference between low- and high-flow control stages; positive |
-| `rating_curve_exponent` | 0.60 | exponent | Shape of synthetic stage–flow relation; positive |
+| `groundwater_boundary_mode` | `"drain"` | choice | Outflow-only DRN; `"constant_ghb"` explicitly permits bidirectional exchange at an assumed constant head |
+| `groundwater_boundary_k_m_per_day` | `K_constant` | m/day | Effective boundary K in `C=K*A/L`; positive, uncalibrated |
+| `groundwater_boundary_resistance_in_domain_lengths` | 1.0 | ratio | Effective resistance length divided by modeled reach length; positive; not a remote control location |
+| `drain_elevation_above_outlet_bed_m` | 0.0 | m | Local DRN discharge threshold relative to modeled outlet bed; does not prescribe groundwater head |
+| `constant_ghb_head_above_outlet_bed_m` | 0.10 | m | Explicit assumed constant GHB head relative to modeled outlet bed; only used in GHB mode |
+| `external_outlet_height_above_bed_m` | 0.0 | m | Independent flowing-channel Manning invert above modeled outlet bed; nonnegative |
+| Pool initial depth | 0.10 | m | Fixed above each pool's low bed; legacy preview depth is not an active coarse-river control |
 | `forcing_interpolation` | `"STEPWISE"` | choice | MODFLOW time-series interpolation; retain stepwise for period means |
-| `pre_dam_outlet_width_m` | 1.0 | m | Effective width of the downstream sharp-weir outlet; positive |
+| `river_settings.manning_width_m` | 2.0 | m | Effective flowing-channel width; positive |
+| `river_settings.manning_roughness` | 0.04 | — | Manning roughness; positive |
+| `river_settings.downstream_segments` | 2 | — | Fixed validated two-pool downstream configuration |
+| `river_settings.pond_exchange_height_above_thalweg_m` | 1.25 | m | Maximum pond exchange height above transverse thalweg |
+| `river_settings.river_storage_height_above_highest_bed_m` | 0.50 | m | River storage extent above highest local bed |
 | `post_dam_weir_width_m` | 2.0 | m | Effective active width of the BDA crest transfer; positive |
+
+No downstream head or river-stage record is required in default DRN mode.
+The deleted remote rating curve and slope projection must not be reconstructed
+in generated files. Handoff v6 intentionally rejects older inputs: run MakeGrid
+and MakeInputs again. Drainage still assumes an open downstream discharge path;
+its threshold and resistance can affect the model. The surface outlet assumes
+free discharge without external backwater. The optional constant GHB specifies
+an explicitly assumed head and requires sensitivity testing. See
+[BOUNDARY_ASSUMPTIONS.md](BOUNDARY_ASSUMPTIONS.md).
 
 Lakebed leakance passed to MODFLOW is
 `lakebed_vertical_k_m_per_day / lakebed_thickness_m`. The default is
@@ -479,12 +490,11 @@ The factors are normalized internally to a mean of one, then multiplied by
 | `uzf_extwc` | 0.10 | water fraction | ET extinction water content; not below residual content |
 | `uzf_ntrailwaves` | 7 | count | UZF trailing-wave numerical capacity |
 | `uzf_nwavesets` | 20 | count | UZF wave-set numerical capacity; increase to 40 if MF6 reports insufficient capacity |
-| `external_weir_invert_depth_m` | 0.05 | m | External LAK outlet invert below time-zero downstream stage |
 | `initial_head_channel_offset_m` | 0.1 | m | Initial plane above the lowest channel cell at the downstream grid edge |
 | `initial_head_regional_slope_m_per_m` | from geometry | m/m | Automatically exported signed regional slope; initial plane is constant transversely |
-| `fall_average_spinup_years` | 0 | years | Constant September--November-average forcing spinup years |
-| `monthly_spinup_years` | 5 | years | Monthly-climatology spinup years |
-| `weekly_spinup_years` | 2 | years | Weekly-climatology spinup years |
+| `fall_average_spinup_years` | 0 | years | Optional constant September--November-average forcing years; disabled by default |
+| `monthly_spinup_years` | 4 | years | Monthly-climatology spinup years; includes the two years formerly spent in annual fall-average spinup |
+| `weekly_spinup_years` | 1 | years | Weekly-climatology spinup years |
 | `pre_dam_years` | 2 | years | Monitored pre-dam years |
 | `post_dam_years` | 2 | years | Monitored post-dam years; zero gives a no-dam monitored run |
 
@@ -537,11 +547,10 @@ MATLAB rather than manually entered. They are stored in paired HDF5 handoffs.
 | Group | Contents | Purpose |
 |---|---|---|
 | Calendar vectors | `perlen_days`, `nstp` | Stress-period length and one time step per period |
-| Rating curve | flow and downstream-control stage | Converts inflow to external control stage |
 | Lake connections | X index, Y index, native layer for every lake cell | Defines vertical LAK–GWF connections |
 | Stage–area–volume table | stage, area, and volume | Represents upstream impoundment storage |
-| Outlet widths | pre-dam external and post-dam transfer/outlet widths | LAK sharp-weir controls |
-| GHB cell table | indices, conductance, path length | Defines downstream groundwater boundary |
+| Outlet widths | Manning river width and BDA crest width | Manning channel transfers and sharp-weir crest |
+| Groundwater cell table | indices, conductance, effective resistance length, mode | Defines local DRN or constant GHB boundary |
 | Monitoring table | requested coordinates, resolved indices, layer | Defines head observations and cross-dam diagnostics |
 | Dam endpoints | two XY points | Divides upstream and downstream zones |
 
@@ -575,7 +584,7 @@ These have MATLAB shape `[nx,ny,n_layers]`, except `Z`, which has
 | `Sy`, `Ss` | Specific-yield and specific-storage tensors |
 | `Porosity` | Effective-porosity tensor |
 | `BDA_LEAKAGE_MASK` | Three-dimensional under-dam treatment zone |
-| Downstream GHB mask | Groundwater cells assigned to the external boundary |
+| Downstream groundwater mask | Groundwater cells assigned to the local outlet boundary |
 | UZF eligibility mask | Layers allowed to contain UZF features |
 
 ### Derived time series and time-dependent matrices
@@ -588,8 +597,8 @@ These have MATLAB shape `[nx,ny,n_layers]`, except `Z`, which has
 | Land ET | m/day | Applied by UZF over land cells only |
 | Lake precipitation | m/day | Applied by LAK over fixed lake footprints only |
 | Lake evaporation | m/day | Applied by LAK over fixed lake footprints only |
-| Downstream control stage | m | One external surface-water control series |
-| GHB reference heads | m | Matrix with one row per GHB cell and one column per period edge |
+| Groundwater reference levels | m | Fixed DRN threshold or explicit constant GHB head, one row per boundary cell and one column per period edge |
+| Surface outlet inverts | m | Independent elevations from local bed and explicit offset; dam transfer uses modeled crest |
 
 RCH and EVT packages are intentionally prohibited. Atmospheric water is
 partitioned between UZF land cells and LAK cells so precipitation, recharge,
@@ -686,7 +695,8 @@ where a value came from. It should trace from the source parameter forward.
 | `bdam.solver.outer.csv` | Compact outer-iteration convergence history |
 | `bdam.heads.csv` | Groundwater heads at named monitoring locations |
 | `bdam.lake_fluxes.csv` | LAK stage, storage, outlets, and native lake observations |
-| `bdam.ghb_flux.csv` | Total exchange at the downstream groundwater boundary |
+| `bdam.groundwater_boundary_flux.csv` | Signed net exchange at the downstream groundwater boundary |
+| `boundary_assumptions.json` | Actual DRN/GHB mode, reference levels, conductance, independent outlet invert and limitations |
 | `bdam.fluxes.csv` | Comparable external fluxes, storage changes, lake–groundwater exchange, and cross-dam groundwater flow |
 | `bdam.hds` | Full binary groundwater-head field for maps and sections |
 | `bdam.cbc` | Full groundwater cell-budget data |
@@ -728,7 +738,7 @@ For every scenario or calibration trial, record:
 | Geometry | Domain, grid spacing, cross section, meander, slopes, and dam geometry |
 | Aquifer | Layering, K/K33 method, Sy, Ss, porosity, and data sources |
 | Surface water | Channel width rule, lakebed thickness/K, outlet widths, dam settings |
-| Boundaries | GHB location, path length, K, stage slope, and rating-curve assumptions |
+| Boundaries | DRN/GHB mode, local thresholds or assumed constant head, effective resistance, K, independent local surface outlet and sensitivity evidence |
 | Forcing | Hydrograph source, scaling, precipitation, ET, recharge, and water-year alignment |
 | Initial state and spinup | Head assumptions and years in each spinup stage |
 | Software | MATLAB, Python, FloPy, h5py, NumPy, and MODFLOW versions |
@@ -739,12 +749,6 @@ For every scenario or calibration trial, record:
 This record is as important as the numerical output. It makes the model
 reviewable, repeatable, and suitable for engineering discussion.
 
-## Campaign execution on the parameter-sweeps branch
+## Parameter-sweep branch
 
-The normal `MakeGrid.m` -> `MakeInputs.m` -> Python runner order remains.
-With scalar inputs and no explicit campaign root, `MakeInputs.m` creates the
-usual paired `ModelInput` handoffs. Supplying candidate vectors prepares isolated
-Cartesian members instead; launch their manifest using `bdam_sweeps.py run`.
-`BDAM_PREVIEW=1` plans without handoff preparation or solver execution. All active
-folders and the executable must be local and nonsynchronized. See `SWEEPS.md`
-for exact commands, baseline omission/reuse, collection and retention policies.
+See [SWEEPS.md](SWEEPS.md) for Cartesian planning, periodic forcing, concurrent execution and retention. This branch retains the larger 70 × 140 terrain; new campaigns use v0.2.0 river and local boundary physics with 0/4/1 spinup. Existing campaign snapshots remain immutable and must not be reused for the changed formulation.

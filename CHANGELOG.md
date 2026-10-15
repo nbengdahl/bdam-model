@@ -25,7 +25,31 @@
 
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-14
+
+- Promote validated coarse Manning river pools, two downstream segments and pond-only upper-bank exchange trimming with full DEM storage.
+- Conserve surface volume at installation, preserve geographic exchange totals and document phase-dependent native LAK IDs.
+- Require regenerated schema v6 handoffs with independent storage/exchange masks and outlet laws.
+- Record comparative validation and physical limits in RIVER_REFINEMENTS.md; retain strict solver, budget and calendar checks.
+
+
+- Use monthly-first spinup: replace the two configured constant fall-average
+  years with two additional monthly-climatology years, preserving five total
+  spinup years (0 fall, 4 monthly, 1 weekly). Benchmark against the retained
+  annual-start case; the first year contains 12 monthly periods.
+- Extend the sweep approach to a 2000-outer-iteration allowance for both IMS
+  profiles; retain damping, strict closure tolerances and the existing calendar.
+  Record the configured allowance in solver statistics.
+- Replace the hydrograph-derived remote-stage GHB default with a local
+  outflow-only DRN boundary. Keep constant GHB as an explicit sensitivity mode.
+- Separate surface outlet invert and initial river depth from groundwater
+  reference levels; derive each from modeled outlet terrain and explicit inputs.
+- Remove remote rating-curve and downstream-slope assumptions from preparation,
+  export and runtime schedules. Handoff v5 rejects legacy inputs and requires
+  regeneration rather than silently adopting changed physics.
+- Report gross groundwater inflow/outflow by cell sign, retain GHB-only fields,
+  add drain outflow and per-workspace boundary assumption diagnostics.
+- Add boundary tests and document limitations and required sensitivity checks.
 
 - Replace the nearest-channel initial head field with a regional-slope plane,
   anchored 0.1 m above the downstream channel bottom; remove lateral rise,
@@ -38,7 +62,7 @@
 
 All notable changes to BDam will be documented in this file.
 
-## Unreleased
+## Earlier unreleased development
 
 ### Added
 
