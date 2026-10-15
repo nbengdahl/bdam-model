@@ -7,6 +7,7 @@ then one pond and two downstream pools on the default terrain. Upper pond banks
 are excluded from groundwater exchange, while full connected topography supplies
 storage. Installation conserves surface volume. See [RIVER_REFINEMENTS.md](RIVER_REFINEMENTS.md)
 for settings, validation evidence, observation meanings and remaining limitations.
+The fresh release run and viewer default are recorded in [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md).
 The current workflow is 0 fall / 4 monthly / 1 weekly spinup years and two weekly
 pre-dam plus two post-dam years. Historical timing/head benchmarks below describe
 earlier formulations and are retained only as historical evidence.
@@ -288,7 +289,7 @@ MATLAB while the package directory is current:
 LaunchBDamResultsViewerApp
 ```
 
-The default field is `../BDam_out` relative to the package. Launching or
+The default field is `~/BDamRuns/bdam-v0.2.0-20261014/BDam`. Launching or
 browsing only selects a folder; click Load before any output is read. To
 preselect another run, pass its complete output root:
 

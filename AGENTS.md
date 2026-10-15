@@ -79,7 +79,7 @@ Check available local space before setup:
 df -h ..
 ```
 
-Reserve at least 4 GB for the current 0/4/1 monthly-first spinup plus weekly 1/1
+Reserve at least 4 GB for the current 0/4/1 monthly-first spinup plus weekly 2/2
 pre-/post-dam run. More is needed if
 backups will be retained. Confirm that the selected home-directory path is on
 a local disk and is not redirected into a synchronized or network folder.

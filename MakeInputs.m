@@ -108,7 +108,7 @@ dam_settings.max_lake_extent_height_above_weir_m = 0.50; % #User_Defined: [m], r
 
 %% 2. Post-dam initial water level
 post_dam = struct();
-post_dam.initial_depth_above_dam_toe_m = 1.0; % #User_Defined: [m] above sampled dam toe
+post_dam.initial_depth_above_dam_toe_m = 1.0; % Legacy preview only; installation conserves surface volume.
 
 %% 3. Load geometry and derive shared grid/layer/property fields
 assert(any(time_resolution == ["weekly", "daily"]), "time_resolution must be weekly or daily.");
