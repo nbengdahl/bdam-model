@@ -111,7 +111,7 @@ python3 --version
 python3 -m pip install --user -r requirements.txt
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  python3 -m unittest -v test_bdam_workflow.py
+  python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py
 ```
 
 All tests must pass. If dependency installation fails because network access
