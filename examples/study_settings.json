@@ -1,0 +1,7 @@
+{
+  "shared": {},
+  "execution": {
+    "n_parallel_runs": 1,
+    "retention": "full"
+  }
+}

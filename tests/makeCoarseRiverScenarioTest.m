@@ -37,6 +37,30 @@ classdef makeCoarseRiverScenarioTest < matlab.unittest.TestCase
                 f.offChannelMinimum);
         end
 
+        function alternateCountsCoverChannelAndRoute(testCase)
+            for count=[1 2 3]
+                f=makeCoarseRiverScenarioTest.fixture("pre_dam",false);
+                f.settings.downstream_segments=count;
+                [lakes,outlets,~,info]=makeCoarseRiverScenario("pre_dam", ...
+                    f.lake,f.outlets,f.top,f.layers,f.X,f.Y,1,1, ...
+                    f.geometry,f.dam,f.upstream,f.channel,f.settings);
+                coverage=zeros(size(f.channel));
+                for lake=lakes, coverage=coverage+double(lake.storage_footprint_mask); end
+                testCase.verifyEqual(coverage(f.channel),ones(nnz(f.channel),1));
+                testCase.verifyEqual(outlets.receiver(1:end-1),outlets.provider_lake(2:end));
+                testCase.verifyEqual(info.downstream_segments,count);
+                testCase.verifyEqual(nnz(info.lake_roles=="downstream_pool"),count);
+                testCase.verifyEqual(nnz(info.lake_roles=="upstream_pool"),info.upstream_pool_count);
+            end
+        end
+        function excessiveCountRejected(testCase)
+            f=makeCoarseRiverScenarioTest.fixture("pre_dam",false);
+            f.settings.downstream_segments=20;
+            testCase.verifyError(@()makeCoarseRiverScenario("pre_dam", ...
+                f.lake,f.outlets,f.top,f.layers,f.X,f.Y,1,1, ...
+                f.geometry,f.dam,f.upstream,f.channel,f.settings),"BDam:SegmentResolution");
+        end
+
         function damWeirStillUsesCrest(testCase)
             f = makeCoarseRiverScenarioTest.fixture("post_dam",false);
             [~,outlets] = makeCoarseRiverScenario("post_dam",f.lake,f.outlets, ...

@@ -8,11 +8,12 @@ from build_bdam_simulation import _coarse_restart_stages, validate_lak_outlet_ro
 
 
 class Storage:
-    def __init__(self, areas):
+    def __init__(self, areas, downstream_segments=2):
         self.areas = areas
+        self.downstream_segments = downstream_segments
 
     def scalar(self, key):
-        return 2 if key.endswith('downstream_segments') else len(self.areas)
+        return self.downstream_segments if key.endswith('downstream_segments') else len(self.areas)
 
     def array(self, key):
         i = int(key.split('/lake_')[1].split('/')[0]) - 1
@@ -29,6 +30,15 @@ class CoarseRiverTests(unittest.TestCase):
             audit = json.loads((root/'dam_installation_storage_audit.json').read_text())
             self.assertAlmostEqual(audit['before_volume_m3'], 40.)
             self.assertAlmostEqual(audit['error_m3'], 0.)
+
+    def test_variable_segment_restart_preserves_each_downstream_volume(self):
+        for count in (1,2,3):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                pre=Storage([2,3]+[4]*count,count)
+                post=Storage([10]+[4]*count,count)
+                stages=np.array([1.,2.]+[3.]*count)
+                result=_coarse_restart_stages(pre,post,stages,Path(directory))
+                np.testing.assert_allclose(result,[.8]+[3.]*count)
 
     def test_invalid_restart_cannot_silently_clip_or_drop_storage(self):
         with tempfile.TemporaryDirectory() as directory:

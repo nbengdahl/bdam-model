@@ -2,7 +2,12 @@ function [lakes,outlets,atmosphere_mask,experiment] = makeCoarseRiverScenario(sc
 % Coarse pools: full DEM storage, independently selected exchange.
 assert(mean(ZTop(:,1))<mean(ZTop(:,end)), 'Coarse river supports downstream minimum-Y only.');
 mode="pond_narrow"; ndown=settings.downstream_segments;
-assert(ndown==2,'This model uses the validated two-downstream-pool formulation.');
+assert(isscalar(ndown) && isfinite(ndown) && ndown>=1 && fix(ndown)==ndown, ...
+    'BDam:SegmentCount','Downstream segments must be a positive integer.');
+available_rows=nnz(any(channel & ~upstream & ~dam.grid_mask,1));
+assert(ndown<=available_rows,"BDam:SegmentResolution", ...
+    "Requested %d downstream segments but only %d longitudinal channel cells are available.", ...
+    ndown,available_rows);
 nrough=settings.manning_roughness; width=settings.manning_width_m;
 pond_cut=settings.pond_exchange_height_above_thalweg_m;
 river_cap=settings.river_storage_height_above_highest_bed_m;
@@ -11,6 +16,8 @@ p=geometry.parameters; wave=2*pi*p.sine_periods/p.domain_length_y_m;
 speed=@(yy)sqrt(1+(p.sine_amplitude_m*wave*cos(wave*(yy-p.origin_y_m))).^2);
 yedge=p.origin_y_m; ydam=geometry.dam_centerline_station_m;
 sdam=integral(speed,yedge,ydam,'RelTol',1e-10); interval=sdam/ndown;
+send=integral(speed,yedge,yedge+p.domain_length_y_m,'RelTol',1e-10);
+[edges,nup]=bdamRiverPoolEdges(sdam,send,ndown);
 yrow=Y(1,:); srow=arrayfun(@(yy)integral(speed,yedge,yy,'RelTol',1e-10),yrow);
 thalweg=min(ZTop,[],1); relative=ZTop-thalweg;
 atmosphere_mask=false(size(ZTop)); lakes=old_lakes([]);
@@ -27,19 +34,21 @@ if scenario=="post_dam"
     domains=cell(ndown,1);
     % Order pools upstream to downstream. Domain follows existing dam-side mask.
     for k=1:ndown
-        bucket=ndown-k; rows=(srow>=bucket*interval)&(srow<(bucket+1)*interval);
+        bucket=ndown-k; rows=(srow>=edges(bucket+1))&(srow<edges(bucket+2));
         domains{k}=repmat(rows,size(ZTop,1),1)&~upstream&~dam.grid_mask;
     end
 else
-    npool=ceil(max(srow)/interval); domains=cell(npool,1);
+    npool=ndown+nup; domains=cell(npool,1);
     for k=1:npool
-        bucket=npool-k; rows=(srow>=bucket*interval)&(srow<(bucket+1)*interval);
+        bucket=npool-k; rows=(srow>=edges(bucket+1))&(srow<edges(bucket+2));
         domains{k}=repmat(rows,size(ZTop,1),1);
     end
 end
+actual_extents=zeros(numel(domains),2);
 for k=1:numel(domains)
     domain=domains{k}; domain=domain & repmat(any(domain & channel,1),size(ZTop,1),1);
-    rows=any(domain,1); assert(any(rows),'Empty pool');
+    rows=any(domain,1); assert(any(rows),'BDam:EmptyPool','Requested segmentation creates an empty pool; use fewer segments or a finer grid.');
+    actual_extents(k,:)=[min(srow(rows)) max(srow(rows))];
     rowmin=min(ZTop+1e6*~domain,[],1); low=min(rowmin(rows)); cap=max(rowmin(rows))+river_cap;
     storage=floodConnected(domain & ZTop<=cap,channel&domain&ZTop<=cap);
     assert(any(storage,'all'));
@@ -72,9 +81,18 @@ end
 invert(end)=old_outlets.invert_elevation_m(end);
 outlets=table(provider,receiver,invert,widths,role,cout,rough,slopes,'VariableNames', ...
     {'provider_lake','receiver','invert_elevation_m','width_m','role','type_code','roughness','slope'});
+if scenario=="post_dam"
+    pond_rows=any(lakes(1).storage_footprint_mask,1);
+    actual_extents=[min(srow(pond_rows)) max(srow(pond_rows)); actual_extents];
+    lake_roles=["upstream_impoundment"; repmat("downstream_pool",ndown,1)];
+else
+    lake_roles=[repmat("upstream_pool",nup,1); repmat("downstream_pool",ndown,1)];
+end
 experiment=struct('enabled',1,'downstream_segments',ndown,'exchange_narrow',1,'pond_only_narrow',1, ...
     'river_storage_height_above_highest_bed_m',river_cap,'pond_exchange_height_above_thalweg_m',pond_cut, ...
-    'segment_interval_m',interval,'dam_distance_from_outlet_m',sdam);
+    'segment_interval_m',interval,'dam_distance_from_outlet_m',sdam, ...
+    'pool_interval_edges_m',edges,'pool_cell_center_extents_m',actual_extents, ...
+    'upstream_pool_count',nup,'lake_roles',lake_roles);
 fprintf('COARSE RIVER: %s, downstream segments %d, interval %.5g m; atmosphere cells %d; exchange cells %d\n', ...
     mode,ndown,interval,nnz(atmosphere_mask),sum(arrayfun(@(l)nnz(l.footprint_mask),lakes)));
 end
@@ -95,6 +113,6 @@ mask=false(size(candidate));q=find(seed&candidate);mask(q)=true;pos=1;
 while pos<=numel(q)
     [i,j]=ind2sub([nx,ny],q(pos));pos=pos+1;ii=[i-1 i+1 i i];jj=[j j j-1 j+1];
     ok=ii>=1&ii<=nx&jj>=1&jj<=ny;new=sub2ind([nx,ny],ii(ok),jj(ok));new=new(candidate(new)&~mask(new));
-    mask(new)=true;q=[q;new(:)]; %#ok<AGROW>
+    mask(new)=true;q=[q;new(:)];
 end
 end

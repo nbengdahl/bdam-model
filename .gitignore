@@ -17,3 +17,5 @@ Campaign/
 .bdam-run.lock
 forcing_request.json
 forcing_diagnostics.json
+
+Study/

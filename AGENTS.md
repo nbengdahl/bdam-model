@@ -353,23 +353,33 @@ Timestamp, path, container-layout, and elapsed-time differences are expected.
 Any numerical dataset, summary, monitoring, budget, or state difference is
 substantive and must be reported.
 
-## Parameter-sweeps branch workflow
+## Parameter-table branch workflow
 
-Read `SWEEPS.md` before preparing campaigns. Edit numeric scalar inputs in
-`MakeInputs.m` to scalars or candidate vectors; preserve native monthly/layer
-arrays. The schema registry is `bdam_parameter_schema.json`; when introducing
-new scalar inputs, register their branch default and add validation.
+Read `PARAMETERS.md` before creating studies. Use `bdam.Study` or the matching
+CLI/MATLAB wrapper. Cases are explicit rows; do not add references, expand
+vectors, drop duplicates or discard invalid cases in the core. Keep all active
+sources, studies, generated geometry and simulations on local nonsynchronized
+storage. Geometry is generated per execution before paired handoff preparation;
+`MakeInputs.m` no longer requires running `MakeGrid.m` first.
 
-`n_parallel_runs` is a single positive integer, never a sweep axis. Preparation
-is serial; simulations are isolated and bounded across all launchers sharing a
-campaign. Claims are OS locks, not merely PID files. Never delete lock files
-while a campaign is active. A quiet member may be waiting for a capacity slot.
-The runner preserves slot/claim descriptors across POSIX solver subprocesses.
-Do not copy or edit active member snapshots, generated handoffs, or results.
+The authoritative registry is `bdam_parameter_schema.json`: `parameters` defines
+scientific fields and validation; `defaults` is its nested MATLAB mirror and
+`scalar_defaults` is the deprecated adapter mirror. Keep these synchronized.
+Display-only App values are not scientific parameters. Unknown fields and
+geometry-file inputs must be rejected. Preserve native array meanings.
 
-Use preview to inspect Cartesian count and inputs before launch. Do not silently
-omit invalid combinations or weaken QA. Keep full outputs for pilots. Compact
-retention is explicit and occurs only after full validation; it keeps summaries,
-QA, solver statistics, logs and restart states but does not support the existing
-binary Results Viewer. Failed workspaces remain intact. Resume only with matching
-source/input/configuration fingerprints and validated completion receipts.
+`river_settings.downstream_segments` defaults to 2 and accepts positive integers.
+Reject counts exceeding downstream longitudinal cells, or creating empty pools.
+Use centerline spacing; add upstream remainder to the upstream-most pool.
+Preserve dynamic lake topology and conservative dam-installation storage transfer.
+
+Execution capacity is a study setting, never a case parameter. Preparation is
+serial; simulations are isolated and bounded across launchers sharing a study.
+Never delete active lock files or change immutable requests/snapshots. Retain
+failed attempts. Resume/reuse requires matching scientific provenance and fully
+validated completion receipts. Full retention is default; compact is explicit.
+Return per-case errors and continue valid cases. Never invent objective penalties.
+
+Frozen sweep campaigns stay untouched and require their original tools.
+The table interface changes input/orchestration, not the existing calendar,
+solver, boundary assumptions or numerical QA requirements above.

@@ -1,3 +1,7 @@
+> Deprecated interface: see [PARAMETERS.md](PARAMETERS.md). New studies execute
+> explicit rows. Historical sweep campaigns require their original snapshots.
+> The following text records the previous branch workflow.
+
 # Parameter sweeps and sensitivity runs
 
 This branch defaults to 70 x 140 cells at 1 m spacing, five layers, 0 fall-average / 4 monthly / 1 weekly spinup years (no initial seven-day

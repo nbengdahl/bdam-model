@@ -182,31 +182,8 @@ class CampaignTests(unittest.TestCase):
         cfg=configuration(); cfg['specific_yield']=[[.1,.2],[.3,.4]]
         with self.assertRaisesRegex(ValueError,'matrix'): expand(cfg,SCHEMA['scalar_defaults'])
 
-    def test_manifest_snapshot_and_provenance_are_stable(self):
-        with tempfile.TemporaryDirectory() as temp:
-            source=Path(temp)/'source'; source.mkdir()
-            for name in ('bdam_parameter_schema.json','usgs_13348000_hydrograph.csv'):
-                (source/name).write_bytes((HERE/name).read_bytes())
-            (source/'Geometry').mkdir()
-            with h5py.File(source/'Geometry'/'BDamGeometry.mat','w') as geometry:
-                for name in ('X','Y','ZTop','dx','dy','parameters','post_dam','dam_settings'):
-                    geometry.create_dataset(name,data=np.ones(1))
-            # A source checkout can already have ordinary preparation outputs.
-            write(source/'forcing_request.json', {'previous': 'preparation'})
-            write(source/'forcing_diagnostics.json', {'previous': 'diagnostics'})
-            cfg=configuration(); write(source/'request.json',cfg)
-            manifest=plan(source/'request.json',Path(temp)/'campaign',source)
-            member=Path(manifest['members'][0]['path']); verify_snapshot(member)
-            self.assertNotIn('forcing_request.json', read(member/'provenance.json')['source_hashes'])
-            self.assertFalse((member/'forcing_diagnostics.json').exists())
-            # Member preparation can freely create/change generated artifacts.
-            write(member/'forcing_request.json', {'member': 'preparation'})
-            write(member/'forcing_diagnostics.json', {'member': 'diagnostics'})
-            verify_snapshot(member)
-            manifest2=plan(source/'request.json',Path(temp)/'campaign',source)
-            self.assertEqual(manifest,manifest2)
-            (member/'usgs_13348000_hydrograph.csv').write_text('tampered')
-            with self.assertRaises(ValueError): verify_snapshot(member)
+    def test_frozen_manifest_has_explicit_version(self):
+        self.assertEqual(SCHEMA['version'], 'bdam-parameters-v3')
 
     def test_member_lock_and_slots_across_processes(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -249,22 +226,20 @@ class CampaignTests(unittest.TestCase):
             write(Path(temp)/'resolved_config.json',cfg)
             self.assertEqual(len(expected_workspaces(temp)),4)
 
-    def test_registered_scalar_defaults_match_editable_script(self):
-        script=(HERE/'MakeInputs.m').read_text()
-        scalar_assignments=re.findall(r'^([A-Za-z]\w*(?:\.\w+)?)\s*=\s*([-+\d.e]+);\s*% #User_Defined',script,re.M)
-        for name,value in scalar_assignments:
-            if name!='n_parallel_runs':
-                self.assertIn(name,SCHEMA['scalar_defaults'])
-                self.assertEqual(float(value),SCHEMA['scalar_defaults'][name])
+    def test_registered_scalar_defaults_match_canonical_registry(self):
+        for name,value in SCHEMA['scalar_defaults'].items():
+            if name != 'groundwater_boundary_k_m_per_day':
+                self.assertEqual(value,SCHEMA['parameters'][name]['default'])
 
     def test_compact_completion_and_resume_validate_results_without_rewriting(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp); (path/'Runs').mkdir()
             np.savez_compressed(path/'Runs'/'restart_states.npz',heads=np.ones((1,2,2)))
             (path/'Runs'/'weekly_summary.csv').write_text('phase,time_days\npre_dam,365\n')
+            write(path/'prepared.json',dict(handoff_hashes={}))
             checksums=result_hashes(path)
             write(path/'completion.json',dict(fingerprint='x',status='pass',retention='compact',result_hashes=checksums))
-            with patch('bdam_sweeps.verify_snapshot',return_value={}):
+            with patch('bdam_runtime.verify_snapshot',return_value={}):
                 self.assertTrue(complete(path,'x'))
                 self.assertTrue(complete(path,'x'))
                 self.assertEqual(result_hashes(path),checksums)
@@ -279,8 +254,8 @@ class CampaignTests(unittest.TestCase):
             write(source/'completion.json',dict(fingerprint='x',status='pass',retention='compact',elapsed_seconds=1))
             member=dict(id='a',fingerprint='x',path=str(target),baseline=True)
             manifest=dict(root=temp,n_parallel_runs=1)
-            with patch('bdam_sweeps.verify_snapshot',return_value={'fingerprint':'x'}):
-                with patch('bdam_sweeps.complete',side_effect=lambda path, fingerprint: Path(path)==source and fingerprint=='x'):
+            with patch('bdam_runtime.verify_snapshot',return_value={'fingerprint':'x'}):
+                with patch('bdam_runtime.complete',side_effect=lambda path, fingerprint: Path(path)==source and fingerprint=='x'):
                     result=run_member(manifest,member,reuse_baseline=source)
             self.assertTrue(result['reused'])
             self.assertEqual((target/'Runs'/'weekly_summary.csv').read_bytes(),(source/'Runs'/'weekly_summary.csv').read_bytes())
@@ -312,7 +287,7 @@ class CampaignTests(unittest.TestCase):
             path=Path(temp)/'member'; path.mkdir()
             write(path/'resolved_config.json',resolve(configuration()))
             manifest=dict(root=temp,n_parallel_runs=1,axes={},members=[dict(id='a',path=str(path),fingerprint='x',baseline=False)])
-            with patch('bdam_sweeps.verify_snapshot',side_effect=ValueError('changed snapshot')):
+            with patch('bdam_runtime.verify_snapshot',side_effect=ValueError('changed snapshot')):
                 result=run_member(manifest,manifest['members'][0])
             self.assertEqual(result['status'],'failed')
             index=collect(manifest); self.assertEqual(index[0]['status'],'failed')

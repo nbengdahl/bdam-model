@@ -1,3 +1,14 @@
+## parameters-table (unreleased)
+
+- Added persistent explicit-case studies with CSV, MATLAB and Python interfaces,
+  successive batches, case-level errors, validated reuse and external design helpers.
+- Generate geometry per case from a typed parameter registry; share defaults with
+  standalone scripts and the terrain app; replace configuration `eval` unpacking.
+- Allow positive integer downstream pool counts, default two; absorb upstream
+  remainder into the upstream-most pool and reject unresolved segments.
+- Preserve case identity and metadata separately from reusable scientific executions;
+  isolate runtime locking from the deprecated sweep adapter.
+
 ## Solver synchronization — 14 October 2026
 
 - Align both IMS profiles with main's 2000-iteration allowance, preserving

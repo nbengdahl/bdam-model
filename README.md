@@ -1,3 +1,8 @@
+> **parameters-table branch:** The primary interface is explicit case tables.
+> See [PARAMETERS.md](PARAMETERS.md) for Python, CSV and MATLAB entry points,
+> generated geometry, configurable river segmentation and migration details.
+> The historical sweep/release instructions below describe earlier interfaces.
+
 # BDam model package
 
 ## River formulation (v0.2.1)

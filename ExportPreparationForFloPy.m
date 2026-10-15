@@ -91,7 +91,9 @@ end
 writeArray(h5_path, "/surface_water/outlets/width_m", sw.outlets.width_m);
 writeArray(h5_path, "/surface_water/outlets/invert_elevation_m", sw.outlets.invert_elevation_m);
 for field = string(fieldnames(sw.coarse_river))'
-    writeArray(h5_path, "/surface_water/coarse_river/"+field, sw.coarse_river.(field));
+    if isnumeric(sw.coarse_river.(field)) || islogical(sw.coarse_river.(field))
+        writeArray(h5_path, "/surface_water/coarse_river/"+field, sw.coarse_river.(field));
+    end
 end
 writeArray(h5_path, "/surface_water/outlets/type_code", sw.outlets.type_code);
 writeArray(h5_path, "/surface_water/outlets/roughness", sw.outlets.roughness);

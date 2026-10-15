@@ -1,5 +1,5 @@
 {
-  "version": "bdam-sweep-parameters-v2",
+  "version": "bdam-parameters-v3",
   "scalar_defaults": {
     "model_bottom_offset": 5.0,
     "n_layers": 5,
@@ -67,5 +67,947 @@
     "K_by_layer_top_to_bottom": "0.03 repeated n_layers times",
     "K33_by_layer_top_to_bottom": "0.003 repeated n_layers times",
     "groundwater_boundary_k_m_per_day": "K_constant"
-  }
+  },
+  "parameters": {
+    "model_bottom_offset": {
+      "default": 5.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "n_layers": {
+      "default": 5,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 1
+    },
+    "layer_growth_factor": {
+      "default": 1.35,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 1
+    },
+    "specific_yield": {
+      "default": 0.2,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0,
+      "maximum": 1
+    },
+    "specific_storage": {
+      "default": 1e-05,
+      "type": "number",
+      "units": "1/m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "effective_porosity": {
+      "default": 0.25,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "maximum": 1,
+      "minimum": 0,
+      "exclusive_minimum": 0
+    },
+    "K_constant": {
+      "default": 0.03,
+      "type": "number",
+      "units": "m/day",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "K33_constant": {
+      "default": 0.003,
+      "type": "number",
+      "units": "m/day",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "hydrofacies_fallback_id": {
+      "default": 1,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 1
+    },
+    "channel_half_width_cells": {
+      "default": 1,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "lakebed_thickness_m": {
+      "default": 0.25,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "lakebed_vertical_k_m_per_day": {
+      "default": 0.05,
+      "type": "number",
+      "units": "m/day",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "synthetic_mean_streamflow_m3_per_day": {
+      "default": 8640,
+      "type": "number",
+      "units": "m3/day",
+      "automatic": false,
+      "minimum": 0
+    },
+    "synthetic_mean_land_et_m_per_day": {
+      "default": 0.002,
+      "type": "number",
+      "units": "m/day",
+      "automatic": false,
+      "minimum": 0
+    },
+    "synthetic_recharge_fraction_of_precipitation": {
+      "default": 0.18,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "synthetic_lake_evaporation_fraction_of_land_et": {
+      "default": 0.85,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.uzf_thtr": {
+      "default": 0.05,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "maximum": 1,
+      "minimum": 0
+    },
+    "mf6_parameters.uzf_thts": {
+      "default": 0.25,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "maximum": 1,
+      "minimum": 0
+    },
+    "mf6_parameters.uzf_thti": {
+      "default": 0.15,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "maximum": 1,
+      "minimum": 0
+    },
+    "mf6_parameters.uzf_eps": {
+      "default": 3.5,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "mf6_parameters.uzf_surfdep_m": {
+      "default": 0.05,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.uzf_extdp_m": {
+      "default": 1.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.uzf_extwc": {
+      "default": 0.1,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0,
+      "maximum": 1
+    },
+    "mf6_parameters.uzf_ntrailwaves": {
+      "default": 7,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 1
+    },
+    "mf6_parameters.uzf_nwavesets": {
+      "default": 20,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 1
+    },
+    "mf6_parameters.initial_head_channel_offset_m": {
+      "default": 0.1,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.fall_average_spinup_years": {
+      "default": 0,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.monthly_spinup_years": {
+      "default": 4,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.weekly_spinup_years": {
+      "default": 1,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.pre_dam_years": {
+      "default": 2,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "mf6_parameters.post_dam_years": {
+      "default": 2,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "post_dam_weir_width_m": {
+      "default": 2.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "dam_settings.leakage_half_width_cells": {
+      "default": 1,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "dam_settings.leakage_n_top_layers": {
+      "default": 3,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 1
+    },
+    "dam_settings.k_multiplier": {
+      "default": 5.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "dam_settings.k33_multiplier": {
+      "default": 5.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "dam_settings.stage_table_rows": {
+      "default": 81,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 3
+    },
+    "dam_settings.max_lake_extent_height_above_weir_m": {
+      "default": 0.5,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "dam_settings.dam_line_sample_spacing_m": {
+      "default": null,
+      "type": "number",
+      "units": "m",
+      "automatic": true,
+      "exclusive_minimum": 0
+    },
+    "forcing_controls.precipitation.magnitude_scale": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "forcing_controls.precipitation.shift_days": {
+      "default": 0.0,
+      "type": "number",
+      "units": "day",
+      "automatic": false
+    },
+    "forcing_controls.precipitation.width_factor": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "forcing_controls.precipitation.center_day": {
+      "default": null,
+      "type": "number",
+      "units": "day",
+      "automatic": true
+    },
+    "forcing_controls.et.magnitude_scale": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "forcing_controls.et.shift_days": {
+      "default": 0.0,
+      "type": "number",
+      "units": "day",
+      "automatic": false
+    },
+    "forcing_controls.et.width_factor": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "forcing_controls.et.center_day": {
+      "default": null,
+      "type": "number",
+      "units": "day",
+      "automatic": true
+    },
+    "forcing_controls.inflow.magnitude_scale": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "forcing_controls.inflow.shift_days": {
+      "default": 0.0,
+      "type": "number",
+      "units": "day",
+      "automatic": false
+    },
+    "forcing_controls.inflow.width_factor": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "forcing_controls.inflow.center_day": {
+      "default": null,
+      "type": "number",
+      "units": "day",
+      "automatic": true
+    },
+    "groundwater_boundary_k_m_per_day": {
+      "default": null,
+      "type": "number",
+      "units": "m/day",
+      "automatic": true,
+      "exclusive_minimum": 0
+    },
+    "groundwater_boundary_resistance_in_domain_lengths": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "drain_elevation_above_outlet_bed_m": {
+      "default": 0.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "constant_ghb_head_above_outlet_bed_m": {
+      "default": 0.1,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "external_outlet_height_above_bed_m": {
+      "default": 0.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "minimum": 0
+    },
+    "river_settings.downstream_segments": {
+      "default": 2.0,
+      "type": "integer",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 1
+    },
+    "river_settings.manning_width_m": {
+      "default": 2.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "river_settings.manning_roughness": {
+      "default": 0.04,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "river_settings.pond_exchange_height_above_thalweg_m": {
+      "default": 1.25,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "river_settings.river_storage_height_above_highest_bed_m": {
+      "default": 0.5,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "time_resolution": {
+      "default": "weekly",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false,
+      "enum": [
+        "weekly",
+        "daily"
+      ]
+    },
+    "longitudinal_direction": {
+      "default": "y",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false,
+      "enum": [
+        "y"
+      ]
+    },
+    "hydraulic_conductivity_mode": {
+      "default": "constant",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false,
+      "enum": [
+        "constant",
+        "by_layer",
+        "hydrofacies_points"
+      ]
+    },
+    "hydrofacies_points_file": {
+      "default": "",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false
+    },
+    "hydrofacies_points": {
+      "default": [],
+      "type": "records",
+      "units": "record fields: x_m,y_m,z_top_m,z_bottom_m,hydrofacies_id",
+      "automatic": false
+    },
+    "hydrofacies_class_properties": {
+      "default": [
+        {
+          "hydrofacies_id": 1,
+          "K_m_per_day": 0.03,
+          "K33_m_per_day": 0.003
+        }
+      ],
+      "type": "records",
+      "units": "record fields: hydrofacies_id,K_m_per_day,K33_m_per_day",
+      "automatic": false
+    },
+    "groundwater_boundary_mode": {
+      "default": "drain",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false,
+      "enum": [
+        "drain",
+        "constant_ghb"
+      ]
+    },
+    "forcing_interpolation": {
+      "default": "STEPWISE",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false,
+      "enum": [
+        "STEPWISE"
+      ]
+    },
+    "usgs_hydrograph_file": {
+      "default": "usgs_13348000_hydrograph.csv",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false
+    },
+    "forcing_mode": {
+      "default": "periodic",
+      "type": "string",
+      "units": "dimensionless",
+      "automatic": false,
+      "enum": [
+        "periodic",
+        "legacy"
+      ]
+    },
+    "initial_river_depth_above_outlet_bed_m": {
+      "default": 0.1,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "pre_dam_outlet_width_m": {
+      "default": 1.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "K_by_layer_top_to_bottom": {
+      "default": null,
+      "type": "array",
+      "units": "m/day",
+      "automatic": true,
+      "length": "n_layers",
+      "exclusive_minimum": 0
+    },
+    "K33_by_layer_top_to_bottom": {
+      "default": null,
+      "type": "array",
+      "units": "m/day",
+      "automatic": true,
+      "length": "n_layers",
+      "exclusive_minimum": 0
+    },
+    "pullman_monthly_precipitation_mm": {
+      "default": [
+        67.8,
+        49.3,
+        52.1,
+        49.8,
+        46,
+        31,
+        11.2,
+        12.2,
+        16.5,
+        45.7,
+        66.5,
+        70.4
+      ],
+      "type": "array",
+      "units": "mm",
+      "automatic": false,
+      "length": 12,
+      "minimum": 0
+    },
+    "synthetic_land_et_monthly_factor": {
+      "default": [
+        0.18,
+        0.22,
+        0.4,
+        0.7,
+        1.1,
+        1.55,
+        1.8,
+        1.6,
+        1.2,
+        0.7,
+        0.35,
+        0.2
+      ],
+      "type": "array",
+      "units": "dimensionless",
+      "automatic": false,
+      "length": 12,
+      "minimum": 0
+    },
+    "synthetic_recharge_monthly_factor": {
+      "default": [
+        1.2,
+        1.2,
+        1.1,
+        1,
+        0.85,
+        0.6,
+        0.25,
+        0.25,
+        0.45,
+        0.85,
+        1.1,
+        1.2
+      ],
+      "type": "array",
+      "units": "dimensionless",
+      "automatic": false,
+      "length": 12,
+      "minimum": 0
+    },
+    "post_dam.initial_depth_above_dam_toe_m": {
+      "default": 1.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "minimum": 0
+    },
+    "geometry.bottom_widths_m": {
+      "default": [
+        2.0,
+        10.0
+      ],
+      "type": "array",
+      "units": "m",
+      "automatic": false,
+      "length": 2,
+      "exclusive_minimum": 0
+    },
+    "geometry.depths_m": {
+      "default": [
+        1.0,
+        1.0
+      ],
+      "type": "array",
+      "units": "m",
+      "automatic": false,
+      "length": 2,
+      "exclusive_minimum": 0
+    },
+    "geometry.left_side_slopes": {
+      "default": [
+        0.25,
+        1.5
+      ],
+      "type": "array",
+      "units": "dimensionless",
+      "automatic": false,
+      "length": 2
+    },
+    "geometry.right_side_slopes": {
+      "default": [
+        0.5,
+        2.5
+      ],
+      "type": "array",
+      "units": "dimensionless",
+      "automatic": false,
+      "length": 2
+    },
+    "geometry.transverse_slopes": {
+      "default": [
+        0.01,
+        0.02
+      ],
+      "type": "array",
+      "units": "dimensionless",
+      "automatic": false,
+      "length": 2
+    },
+    "geometry.vertical_offset_m": {
+      "default": 0.25,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "geometry.dam_max_m": {
+      "default": 1.5,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "minimum": 0
+    },
+    "geometry.domain_length_x_m": {
+      "default": 70.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "geometry.domain_length_y_m": {
+      "default": 140.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "geometry.spacing_x_m": {
+      "default": 1.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "geometry.spacing_y_m": {
+      "default": 1.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "geometry.origin_x_m": {
+      "default": 0.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "geometry.origin_y_m": {
+      "default": 0.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "geometry.sine_periods": {
+      "default": 1.0,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "minimum": 0
+    },
+    "geometry.sine_amplitude_m": {
+      "default": 5.0,
+      "type": "number",
+      "units": "m",
+      "automatic": false
+    },
+    "geometry.regional_longitudinal_slope": {
+      "default": 0.005,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "geometry.channel_longitudinal_slope": {
+      "default": 0.0025,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "geometry.dam_relative_distance_upstream": {
+      "default": 0.25,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false
+    }
+  },
+  "defaults": {
+    "model_bottom_offset": 5.0,
+    "n_layers": 5,
+    "layer_growth_factor": 1.35,
+    "specific_yield": 0.2,
+    "specific_storage": 1e-05,
+    "effective_porosity": 0.25,
+    "K_constant": 0.03,
+    "K33_constant": 0.003,
+    "hydrofacies_fallback_id": 1,
+    "channel_half_width_cells": 1,
+    "lakebed_thickness_m": 0.25,
+    "lakebed_vertical_k_m_per_day": 0.05,
+    "synthetic_mean_streamflow_m3_per_day": 8640,
+    "synthetic_mean_land_et_m_per_day": 0.002,
+    "synthetic_recharge_fraction_of_precipitation": 0.18,
+    "synthetic_lake_evaporation_fraction_of_land_et": 0.85,
+    "mf6_parameters": {
+      "uzf_thtr": 0.05,
+      "uzf_thts": 0.25,
+      "uzf_thti": 0.15,
+      "uzf_eps": 3.5,
+      "uzf_surfdep_m": 0.05,
+      "uzf_extdp_m": 1.0,
+      "uzf_extwc": 0.1,
+      "uzf_ntrailwaves": 7,
+      "uzf_nwavesets": 20,
+      "initial_head_channel_offset_m": 0.1,
+      "fall_average_spinup_years": 0,
+      "monthly_spinup_years": 4,
+      "weekly_spinup_years": 1,
+      "pre_dam_years": 2,
+      "post_dam_years": 2
+    },
+    "post_dam_weir_width_m": 2.0,
+    "dam_settings": {
+      "leakage_half_width_cells": 1,
+      "leakage_n_top_layers": 3,
+      "k_multiplier": 5.0,
+      "k33_multiplier": 5.0,
+      "stage_table_rows": 81,
+      "max_lake_extent_height_above_weir_m": 0.5,
+      "dam_line_sample_spacing_m": null
+    },
+    "forcing_controls": {
+      "precipitation": {
+        "magnitude_scale": 1.0,
+        "shift_days": 0.0,
+        "width_factor": 1.0,
+        "center_day": null
+      },
+      "et": {
+        "magnitude_scale": 1.0,
+        "shift_days": 0.0,
+        "width_factor": 1.0,
+        "center_day": null
+      },
+      "inflow": {
+        "magnitude_scale": 1.0,
+        "shift_days": 0.0,
+        "width_factor": 1.0,
+        "center_day": null
+      }
+    },
+    "groundwater_boundary_k_m_per_day": null,
+    "groundwater_boundary_resistance_in_domain_lengths": 1.0,
+    "drain_elevation_above_outlet_bed_m": 0.0,
+    "constant_ghb_head_above_outlet_bed_m": 0.1,
+    "external_outlet_height_above_bed_m": 0.0,
+    "river_settings": {
+      "downstream_segments": 2.0,
+      "manning_width_m": 2.0,
+      "manning_roughness": 0.04,
+      "pond_exchange_height_above_thalweg_m": 1.25,
+      "river_storage_height_above_highest_bed_m": 0.5
+    },
+    "time_resolution": "weekly",
+    "longitudinal_direction": "y",
+    "hydraulic_conductivity_mode": "constant",
+    "hydrofacies_points_file": "",
+    "hydrofacies_points": [],
+    "hydrofacies_class_properties": [
+      {
+        "hydrofacies_id": 1,
+        "K_m_per_day": 0.03,
+        "K33_m_per_day": 0.003
+      }
+    ],
+    "groundwater_boundary_mode": "drain",
+    "forcing_interpolation": "STEPWISE",
+    "usgs_hydrograph_file": "usgs_13348000_hydrograph.csv",
+    "forcing_mode": "periodic",
+    "initial_river_depth_above_outlet_bed_m": 0.1,
+    "pre_dam_outlet_width_m": 1.0,
+    "K_by_layer_top_to_bottom": null,
+    "K33_by_layer_top_to_bottom": null,
+    "pullman_monthly_precipitation_mm": [
+      67.8,
+      49.3,
+      52.1,
+      49.8,
+      46,
+      31,
+      11.2,
+      12.2,
+      16.5,
+      45.7,
+      66.5,
+      70.4
+    ],
+    "synthetic_land_et_monthly_factor": [
+      0.18,
+      0.22,
+      0.4,
+      0.7,
+      1.1,
+      1.55,
+      1.8,
+      1.6,
+      1.2,
+      0.7,
+      0.35,
+      0.2
+    ],
+    "synthetic_recharge_monthly_factor": [
+      1.2,
+      1.2,
+      1.1,
+      1,
+      0.85,
+      0.6,
+      0.25,
+      0.25,
+      0.45,
+      0.85,
+      1.1,
+      1.2
+    ],
+    "post_dam": {
+      "initial_depth_above_dam_toe_m": 1.0
+    },
+    "geometry": {
+      "bottom_widths_m": [
+        2.0,
+        10.0
+      ],
+      "depths_m": [
+        1.0,
+        1.0
+      ],
+      "left_side_slopes": [
+        0.25,
+        1.5
+      ],
+      "right_side_slopes": [
+        0.5,
+        2.5
+      ],
+      "transverse_slopes": [
+        0.01,
+        0.02
+      ],
+      "vertical_offset_m": 0.25,
+      "dam_max_m": 1.5,
+      "domain_length_x_m": 70.0,
+      "domain_length_y_m": 140.0,
+      "spacing_x_m": 1.0,
+      "spacing_y_m": 1.0,
+      "origin_x_m": 0.0,
+      "origin_y_m": 0.0,
+      "sine_periods": 1.0,
+      "sine_amplitude_m": 5.0,
+      "regional_longitudinal_slope": 0.005,
+      "channel_longitudinal_slope": 0.0025,
+      "dam_relative_distance_upstream": 0.25
+    }
+  },
+  "cross_field_constraints": [
+    "dam leakage layer count <= n_layers",
+    "UZF residual <= initial <= saturated; residual < saturated",
+    "UZF residual <= extinction water content <= saturated",
+    "at least one monitored year",
+    "monthly arrays contain 12 entries; layer arrays match n_layers",
+    "positive grid dimensions divisible by spacing with at least two cells",
+    "dam strictly inside reach",
+    "sine periods a nonnegative multiple of 0.5",
+    "supported downstream direction is minimum Y",
+    "geometry cross-section nesting and footprint validation during MATLAB preparation"
+  ]
 }

@@ -1,32 +1,14 @@
 %% MakeGrid -- non-interactive companion to BDamTerrainApp
-% All geometry inputs below use exactly the non-display parameter schema of
-% BDamTerrainApp. Edit this section, then run the script to create the
-% versioned geometry database consumed by MakeInputs.m.
+% Shared defaults use the same non-display schema as BDamTerrainApp.
+% For case-specific geometry use evaluateBDamCases or MakeInputs.m.
 
 clearvars
 close all
 clc
 
 %% Geometry inputs (same names, units, meanings, and defaults as the App)
-parameters = struct();
-parameters.bottom_widths_m = [2 10];
-parameters.depths_m = [1 1];
-parameters.left_side_slopes = [0.25 1.5];
-parameters.right_side_slopes = [0.5 2.5];
-parameters.transverse_slopes = [0.01 0.02];
-parameters.vertical_offset_m = 0.25;
-parameters.dam_max_m = 1.5;
-parameters.domain_length_x_m = 70;
-parameters.domain_length_y_m = 140;
-parameters.spacing_x_m = 1;
-parameters.spacing_y_m = 1;
-parameters.origin_x_m = 0;
-parameters.origin_y_m = 0;
-parameters.sine_periods = 1;
-parameters.sine_amplitude_m = 5;
-parameters.regional_longitudinal_slope = 0.005;
-parameters.channel_longitudinal_slope = 0.0025;
-parameters.dam_relative_distance_upstream = 0.25;
+config = defaultBDamConfig();
+parameters = config.geometry;
 
 % vertical_exaggeration and plot_lake are display-only App controls and are
 % intentionally not geometry-script inputs.
@@ -36,9 +18,9 @@ output_directory = fullfile(script_root,"Geometry");
 if ~isfolder(output_directory), mkdir(output_directory); end
 output_path = fullfile(output_directory,"BDamGeometry.mat");
 
+buildBDamGeometry(parameters,string(output_path));
 profile = buildBDamCrossSection(parameters);
 terrain = buildBDamTerrain(parameters,profile);
-geometry_handoff = saveBDamGeometry(output_path,terrain,profile,parameters); %#ok<NASGU>
 
 %% Review plots (not inputs)
 figure("Name","BDam cross section");

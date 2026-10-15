@@ -234,6 +234,11 @@ classdef BDamTerrainApp < matlab.apps.AppBase
         end
 
         function startup(app)
+            config = defaultBDamConfig();
+            parameters = config.geometry;
+            parameters.vertical_exaggeration = app.Controls.VerticalExaggeration.Value;
+            parameters.plot_lake = app.Controls.PlotLake.Value;
+            app.applyParameters(parameters);
             app.showPlaceholder(app.CrossSectionAxes, ...
                 "Generate a cross section to preview channel geometry");
             app.showPlaceholder(app.TerrainAxes, ...

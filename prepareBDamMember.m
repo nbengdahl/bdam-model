@@ -5,15 +5,63 @@ arguments
     script_root (1,1) string
     show_figures (1,1) logical = false
 end
-names = fieldnames(config);
-for q = 1:numel(names)
-    name = names{q}; value = config.(name);
-    if ischar(value), value = string(value); end
-    if any(string(name) == ["hydrofacies_points","hydrofacies_class_properties"])
-        if isempty(value), value = table(); else, value = struct2table(value); end
-    end
-    eval([name ' = value;']);
-end
+time_resolution = config.time_resolution;
+time_resolution = string(time_resolution);
+source_geometry_file = config.source_geometry_file;
+source_geometry_file = string(source_geometry_file);
+longitudinal_direction = config.longitudinal_direction;
+longitudinal_direction = string(longitudinal_direction);
+model_bottom_offset = config.model_bottom_offset;
+n_layers = config.n_layers;
+layer_growth_factor = config.layer_growth_factor;
+hydraulic_conductivity_mode = config.hydraulic_conductivity_mode;
+hydraulic_conductivity_mode = string(hydraulic_conductivity_mode);
+specific_yield = config.specific_yield;
+specific_storage = config.specific_storage;
+effective_porosity = config.effective_porosity;
+K_constant = config.K_constant;
+K33_constant = config.K33_constant;
+K_by_layer_top_to_bottom = config.K_by_layer_top_to_bottom;
+K33_by_layer_top_to_bottom = config.K33_by_layer_top_to_bottom;
+hydrofacies_points_file = config.hydrofacies_points_file;
+hydrofacies_points_file = string(hydrofacies_points_file);
+hydrofacies_points = table();
+if ~isempty(config.hydrofacies_points), hydrofacies_points = struct2table(config.hydrofacies_points); end
+hydrofacies_fallback_id = config.hydrofacies_fallback_id;
+hydrofacies_class_properties = table();
+if ~isempty(config.hydrofacies_class_properties), hydrofacies_class_properties = struct2table(config.hydrofacies_class_properties); end
+channel_half_width_cells = config.channel_half_width_cells;
+lakebed_thickness_m = config.lakebed_thickness_m;
+lakebed_vertical_k_m_per_day = config.lakebed_vertical_k_m_per_day;
+forcing_interpolation = config.forcing_interpolation;
+forcing_interpolation = string(forcing_interpolation);
+pullman_monthly_precipitation_mm = config.pullman_monthly_precipitation_mm;
+synthetic_mean_streamflow_m3_per_day = config.synthetic_mean_streamflow_m3_per_day;
+usgs_hydrograph_file = config.usgs_hydrograph_file;
+usgs_hydrograph_file = string(usgs_hydrograph_file);
+synthetic_mean_land_et_m_per_day = config.synthetic_mean_land_et_m_per_day;
+synthetic_land_et_monthly_factor = config.synthetic_land_et_monthly_factor;
+synthetic_recharge_fraction_of_precipitation = config.synthetic_recharge_fraction_of_precipitation;
+synthetic_recharge_monthly_factor = config.synthetic_recharge_monthly_factor;
+synthetic_lake_evaporation_fraction_of_land_et = config.synthetic_lake_evaporation_fraction_of_land_et;
+groundwater_boundary_mode = config.groundwater_boundary_mode;
+groundwater_boundary_mode = string(groundwater_boundary_mode);
+groundwater_boundary_k_m_per_day = config.groundwater_boundary_k_m_per_day;
+groundwater_boundary_resistance_in_domain_lengths = config.groundwater_boundary_resistance_in_domain_lengths;
+drain_elevation_above_outlet_bed_m = config.drain_elevation_above_outlet_bed_m;
+constant_ghb_head_above_outlet_bed_m = config.constant_ghb_head_above_outlet_bed_m;
+external_outlet_height_above_bed_m = config.external_outlet_height_above_bed_m;
+initial_river_depth_above_outlet_bed_m = config.initial_river_depth_above_outlet_bed_m;
+river_settings = config.river_settings;
+mf6_parameters = config.mf6_parameters;
+pre_dam_outlet_width_m = config.pre_dam_outlet_width_m;
+post_dam_weir_width_m = config.post_dam_weir_width_m;
+dam_settings = config.dam_settings;
+post_dam = config.post_dam;
+forcing_mode = config.forcing_mode;
+forcing_mode = string(forcing_mode);
+forcing_controls = config.forcing_controls;
+reference_mean_streamflow_m3_per_day = config.reference_mean_streamflow_m3_per_day;
 %% 3. Load geometry and derive shared grid/layer/property fields
 assert(any(time_resolution == ["weekly", "daily"]), "time_resolution must be weekly or daily.");
 assert(any(longitudinal_direction == ["x", "y"]), "longitudinal_direction must be x or y.");
@@ -83,7 +131,7 @@ dam_settings.crest_height_above_dam_toe_m = input_geometry.dam_settings.crest_he
 assert(isequal(size(X), size(Y), size(ZTop)) && dx > 0 && dy > 0, ...
     "X, Y, ZTop must have equal dimensions and dx/dy must be positive.");
 
-[ZBot, average_longitudinal_slope] = makeBottomPlane(X, Y, ZTop, longitudinal_direction, model_bottom_offset);
+[ZBot, ~] = makeBottomPlane(X, Y, ZTop, longitudinal_direction, model_bottom_offset);
 total_model_thickness = ZTop - ZBot;
 assert(min(total_model_thickness, [], "all") > 0, "Model bottom intersects top surface.");
 Z = makeLayerInterfaces(ZTop, ZBot, n_layers, layer_growth_factor);
@@ -796,10 +844,19 @@ function [ids,source]=assignHydrofaciesToGrid(point_file,points,fallback,X,Y,ZCe
     if strlength(point_file)>0, assert(isfile(point_file),"hydrofacies_points_file does not exist."); points=readtable(point_file); source="CSV"; else, source="in-script table"; end
     required=["x_m","y_m","z_top_m","z_bottom_m","hydrofacies_id"]; assert(istable(points)&&all(ismember(required,string(points.Properties.VariableNames)))&&size(points, 1)>0,"Invalid hydrofacies points.");
     ids=fallback*ones(size(ZCell));
-    for k=1:size(ZCell,3), for j=1:size(ZCell,2), for i=1:size(ZCell,1)
-        z=ZCell(i,j,k); match=z<=max(points.z_top_m,points.z_bottom_m)&z>=min(points.z_top_m,points.z_bottom_m);
-        if any(match), p=points(match,:); [~,q]=min((p.x_m-X(i,j)).^2+(p.y_m-Y(i,j)).^2); ids(i,j,k)=p.hydrofacies_id(q); end
-    end,end,end
+    for k=1:size(ZCell,3)
+        for j=1:size(ZCell,2)
+            for i=1:size(ZCell,1)
+                z=ZCell(i,j,k);
+                match=z<=max(points.z_top_m,points.z_bottom_m)&z>=min(points.z_top_m,points.z_bottom_m);
+                if any(match)
+                    p=points(match,:);
+                    [~,q]=min((p.x_m-X(i,j)).^2+(p.y_m-Y(i,j)).^2);
+                    ids(i,j,k)=p.hydrofacies_id(q);
+                end
+            end
+        end
+    end
 end
 
 function [K,K33]=mapHydrofaciesProperties(ids,classes)

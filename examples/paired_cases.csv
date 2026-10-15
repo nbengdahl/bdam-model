@@ -1,0 +1,3 @@
+case_id,K_constant,specific_yield,river_settings.downstream_segments,geometry.dam_max_m,metadata.label
+a,0.01,0.1,1,1.5,paired A
+b,0.02,0.2,3,1.4,paired B

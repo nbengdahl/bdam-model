@@ -1882,7 +1882,7 @@ def _coarse_restart_stages(pre: Handoff, post: Handoff, stages: np.ndarray, work
             raise ValueError("Pre-dam restart stage outside storage table.")
     before = [float(np.interp(st, *table(pre, i))) for i, st in enumerate(stages, 1)]
     nd = int(post.scalar("/surface_water/coarse_river/downstream_segments"))
-    if nd != 2 or len(stages) <= nd or int(post.scalar("/surface_water/n_lakes")) != nd + 1:
+    if nd < 1 or len(stages) <= nd or int(post.scalar("/surface_water/n_lakes")) != nd + 1:
         raise ValueError("Inconsistent coarse river restart topology.")
     target = [sum(before[:-nd]), *before[-nd:]]
     result, after = [], []
@@ -2049,7 +2049,7 @@ def main() -> None:
     parser.add_argument("--stop-after-monthly-spinup", action="store_true",
                         help="validate initial conditions through monthly spinup, then stop")
     args = parser.parse_args()
-    from bdam_sweeps import lock, slot, read
+    from bdam_runtime import lock, slot, read
     root, _, _ = _resolve_handoffs(args.handoff)
     with lock(root.parent / ".bdam-run.lock") as acquired:
         if not acquired:
