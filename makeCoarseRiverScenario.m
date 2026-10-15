@@ -60,8 +60,12 @@ for k=1:numel(domains)
     atmosphere_mask=atmosphere_mask|storage;
     provider(end+1,1)=lake.name;
     if k<numel(domains), receiver(end+1,1)="river_"+(k+1); else, receiver(end+1,1)="external"; end
-    % Manning outlet references actual low-elevation end of its pool.
-    invert(end+1,1)=low; widths(end+1,1)=width;role(end+1,1)="channel_manning";
+    % Minimum-Y is downstream. Interior depressions do not set the outlet.
+    pool_channel=domain & channel;
+    downstream_y=min(Y(pool_channel));
+    outlet_channel=pool_channel & Y==downstream_y;
+    outlet_bed=min(ZTop(outlet_channel));
+    invert(end+1,1)=outlet_bed; widths(end+1,1)=width;role(end+1,1)="channel_manning";
     cout(end+1,1)=1;rough(end+1,1)=nrough;slopes(end+1,1)=abs(p.channel_longitudinal_slope);
 end
 % Preserve the independent external invert from the boundary contract.

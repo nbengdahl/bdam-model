@@ -311,7 +311,8 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
             app.Controls.Variables.Items = cellstr(labels);
             app.Controls.Variables.ItemsData = cellstr(loaded.Variables.Name);
             defaults = ["head_upstream_half_m","head_dam_upstream_1cell_m", ...
-                "head_dam_downstream_1cell_m","head_downstream_half_m"];
+                "head_dam_downstream_1cell_m","head_downstream_half_m", ...
+                "lake1_stage_m","lake2_stage_m"];
             defaults = defaults(ismember(defaults,loaded.Variables.Name));
             if isempty(defaults)
                 defaults = loaded.Variables.Name(1);

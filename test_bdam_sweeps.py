@@ -114,6 +114,22 @@ class ForcingTests(unittest.TestCase):
 
 
 class CampaignTests(unittest.TestCase):
+    def test_inflow_sweep_reference_uses_updated_mean(self):
+        cfg = configuration()
+        cfg['synthetic_mean_streamflow_m3_per_day'] = [4320, 17280]
+        members, baseline, _ = expand(cfg, SCHEMA['scalar_defaults'])
+        self.assertEqual(baseline['synthetic_mean_streamflow_m3_per_day'], 8640)
+        self.assertEqual(len(members), 3)
+        self.assertEqual({m['synthetic_mean_streamflow_m3_per_day'] for m in members},
+                         {4320, 8640, 17280})
+        self.assertTrue(all(m['reference_mean_streamflow_m3_per_day'] == 8640
+                            for m in members))
+        baseline['source_root'] = str(HERE)
+        forcing = generate(baseline, np.linspace(0, 365, 53))
+        self.assertAlmostEqual(
+            forcing['diagnostics']['inflow']['annual_integral'], 8640 * 365,
+            places=6)
+
     def test_cartesian_product_and_native_arrays(self):
         cfg=configuration(); cfg['K_constant']=[.01,.03,.06]; cfg['specific_yield']=[.1,.2]
         cfg['mf6_parameters']['uzf_eps']=[2,3.5]

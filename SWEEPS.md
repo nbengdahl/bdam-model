@@ -5,6 +5,14 @@ relaxation with zero fall-average years), and
 two monitored pre-dam plus two post-dam years. These are starting settings;
 use interannual state changes to assess whether spinup is adequate.
 
+The default mean upstream inflow is 8640 m3/day (0.1 m3/s, 100 L/s), matching
+the main branch. It scales the single upstream hydrograph. Both the editable
+setting and the sweep reference registry use this value; when mean inflow is
+swept, the added default reference uses 8640 m3/day. This is an assumed analog
+flow, not a measured Rose Creek calibration. Historical validation receipts
+predate this default change; prepare new campaigns rather than reusing their
+baseline results.
+
 ## Configure and preview
 
 Use a local nonsynchronized checkout and one persistent Python installation

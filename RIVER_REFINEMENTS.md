@@ -10,6 +10,17 @@ Only the pond's upper banks are excluded from direct groundwater exchange: conne
 
 Settings are in `MakeInputs.m` under `river_settings`. Two downstream pools are the supported configuration; other counts are rejected. Legacy pre-dam width/depth variables construct intermediate geometry only and do not control the coarse river. Pools initialize 0.10 m above their local low bed. Post-dam preview depth does not override the conserved installation state. Regenerate both handoffs: schema v6 includes separate storage and groundwater-exchange masks, outlet laws and the coarse-river descriptor.
 
+River Manning inverts use the lowest channel-bed cell on the downstream-most
+row belonging to each pool (minimum Y in the supported terrain orientation).
+An interior depression or a low cell outside the channel does not lower the
+outlet. Pool-bottom elevations still define storage and initial-depth
+references independently. The final external outlet retains its explicit
+model-edge invert, and the pond weir retains the dam-crest elevation.
+
+Run `runtests('tests/makeCoarseRiverScenarioTest.m')` in MATLAB to check the
+pre-/post-dam outlet selection against interior and off-channel depressions,
+and preservation of the dam crest and external invert.
+
 ## Evidence for the choice
 
 The default five-layer 0/4/1 spinup and weekly two-year pre-/post-dam workflow completed twice with identical scientific outputs. A matched two-year no-dam continuation isolates treatment effects from ongoing adjustment. In year 2 the dam changed annual surface outflow by -259.283 m³, storage accumulation by +156.359 m³, groundwater boundary export by +8.744 m³ and upstream surface-to-groundwater exchange by +201.573 m³. Relative to full pond-bank exchange, those treatment effects differed by 0.24%, 0.33%, 2.27% and 0.67%. Trimming removed 20.9% of pond connections while retaining full storage. At day 730, excluded flooded-bank heads were a median 2.3 cm below the broad-exchange case, maximum 7.3 cm; compensation is gradual.

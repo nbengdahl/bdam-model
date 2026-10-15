@@ -13,7 +13,7 @@
     "channel_half_width_cells": 1,
     "lakebed_thickness_m": 0.25,
     "lakebed_vertical_k_m_per_day": 0.05,
-    "synthetic_mean_streamflow_m3_per_day": 86.4,
+    "synthetic_mean_streamflow_m3_per_day": 8640,
     "synthetic_mean_land_et_m_per_day": 0.002,
     "synthetic_recharge_fraction_of_precipitation": 0.18,
     "synthetic_lake_evaporation_fraction_of_land_et": 0.85,

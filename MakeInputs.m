@@ -54,7 +54,7 @@ forcing_interpolation = "STEPWISE"; % #User_Defined: MF6 time-series interpolati
 % cached USGS climatological shape; its imposed mean, ET, recharge, and lake
 % evaporation remain explicitly synthetic assumptions for review.
 pullman_monthly_precipitation_mm = [67.8;49.3;52.1;49.8;46.0;31.0;11.2;12.2;16.5;45.7;66.5;70.4]; % #User_Defined: NOAA normal-derived [mm/month]
-synthetic_mean_streamflow_m3_per_day = 86.4; % #User_Defined: assumed 1 L/s mean small-stream inflow
+synthetic_mean_streamflow_m3_per_day = 8640; % #User_Defined: assumed 0.1 m3/s (100 L/s) mean upstream inflow
 usgs_hydrograph_file = fullfile(script_root,"usgs_13348000_hydrograph.csv"); % #User_Defined: normalized USGS-shaped 365-day climatology
 synthetic_mean_land_et_m_per_day = 0.0020; % #User_Defined: assumed annual mean land ET (730 mm/year)
 synthetic_land_et_monthly_factor = [0.18;0.22;0.40;0.70;1.10;1.55;1.80;1.60;1.20;0.70;0.35;0.20]; % #User_Defined: warm-season ET maximum

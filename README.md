@@ -182,7 +182,12 @@ To inspect a completed simulation, launch the results viewer:
 LaunchBDamResultsViewerApp
 ```
 
-With no argument it preselects `~/BDamRuns/bdam-v0.2.0-20261014/BDam`, the verified release run.
+With no argument it preselects `~/BDamRuns/bdam-q0p1-20261015/BDam`, the validated 0.1 m3/s mean-inflow run.
+The default curves are the four named channel groundwater heads and Lake 1
+and Lake 2 stages. Lake IDs change meaning at dam installation: pre-dam,
+Lakes 1--8 run upstream to downstream; post-dam, only Lake 1 (the sole
+upstream pond) and Lakes 2 and 3 (the two downstream pools) exist. The same
+lake number does not track the same physical feature across that transition.
 The viewer does not read any output until the user clicks Load. Pass another
 complete output root to preselect it when needed:
 
