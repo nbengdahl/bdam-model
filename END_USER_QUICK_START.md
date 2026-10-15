@@ -521,7 +521,7 @@ automatically.
 | `dam_line_sample_spacing_m` | empty | m | Dam-toe sampling interval; empty uses one-quarter of minimum grid spacing |
 | `stage_table_rows` | 81 | rows | Resolution of post-dam stage–area–volume table; at least 3 |
 | `max_lake_extent_height_above_weir_m` | 0.50 | m | Highest connected upstream footprint represented above crest |
-| `initial_depth_above_dam_toe_m` | 1.0 | m | Initial post-dam upstream water depth; between zero and crest height |
+| `initial_depth_above_dam_toe_m` | 1.0 | m | Legacy geometry preview only; the runner conserves pre-dam surface volume to initialize the pond |
 
 The BDA leakage mask changes aquifer K and K33. It does not switch LAK–GWF
 coupling on or off. Every fixed lake-footprint cell receives a separate
