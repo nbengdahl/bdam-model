@@ -25,6 +25,21 @@
 
 # Changelog
 
+## 0.2.1 — 2026-10-15
+
+- Select river Manning outlet inverts from the downstream-most channel-bed
+  row of each pool, independently of interior or off-channel depressions.
+  Preserve the explicit external outlet invert and pond dam-crest elevation.
+- Add MATLAB regression checks for pre-/post-dam outlet selection.
+- Raise the synthetic mean upstream inflow from 1 L/s to 0.1 m3/s (100 L/s)
+  and report the configured value in forcing provenance.
+- Show Lake 1 and Lake 2 stages with the four channel groundwater heads by
+  default in the results viewer; preselect the 0.1 m3/s output root.
+- Clarify phase-dependent lake numbering, conserved installation state and
+  preview depth; include the river regression checks in the agent runbook.
+- Publish versioned source archives with checksums. Historical v0.2.0
+  full-run validation does not validate the later outlet/inflow changes.
+
 ## 0.2.0 — 2026-10-14
 
 - Port river and local boundary physics into member preparation and campaign runtime; retain periodic forcing, locks and retention. Register river controls, fingerprint the helper and require fresh campaign/parameter schemas v2. Validate the full larger-grid baseline and 53 fast tests.

@@ -63,9 +63,9 @@ persists across restarts.
 
 ```zsh
 mkdir -p "$HOME/BDamRuns/bdam-run-YYYYMMDD"
-cp /absolute/path/to/BDam-v0.2.0.tar.gz \
-  "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.0.tar.gz"
-tar -xzf "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.0.tar.gz" \
+cp /absolute/path/to/BDam-v0.2.1.tar.gz \
+  "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.1.tar.gz"
+tar -xzf "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.1.tar.gz" \
   -C "$HOME/BDamRuns/bdam-run-YYYYMMDD"
 cd "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam"
 ```

@@ -1,0 +1,57 @@
+name: Versioned releases
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: versioned-releases
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out complete tag history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Publish missing versioned releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Process oldest first so the current version is published last.
+          gh api --paginate "repos/$GH_REPO/releases" --jq '.[].tag_name' > "$RUNNER_TEMP/published-tags"
+          while IFS= read -r tag; do
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+            if grep -Fxq "$tag" "$RUNNER_TEMP/published-tags"; then
+              continue
+            fi
+            git archive --format=tar --prefix=BDam/ "$tag" | gzip -n > "$RUNNER_TEMP/BDam-$tag.tar.gz"
+            (cd "$RUNNER_TEMP" && sha256sum "BDam-$tag.tar.gz" > "BDam-$tag.tar.gz.sha256")
+            notes="$RUNNER_TEMP/release-$tag.md"
+            {
+              printf 'BDam %s source release.\n\n' "$tag"
+              printf 'This is a usable but uncalibrated demonstration framework; interfaces and model formulation may change before v1.0.0.\n\n'
+              git show "$tag:CHANGELOG.md" | awk -v version="${tag#v}" '
+                /^## / { if (found) exit; if ($2 == version || $2 == "[" version "]") { found=1; next } }
+                found { print }
+              '
+              printf '\n## Validation and use\n\n'
+              printf 'See the validation documentation at this tag for the scope of recorded checks. Packaging does not run a new MODFLOW simulation.\n\n'
+              printf 'Extract `BDam-%s.tar.gz` to a local, non-synchronized folder and follow `README.md`, `END_USER_QUICK_START.md` and `AGENTS.md`. Generated geometry, handoffs, model outputs and MODFLOW executables are not included.\n\n' "$tag"
+              printf 'Verify the archive with `sha256sum -c BDam-%s.tar.gz.sha256` (or `shasum -a 256 -c` on macOS).\n' "$tag"
+            } > "$notes"
+            gh release create "$tag" --verify-tag --prerelease \
+              --title "BDam $tag" --notes-file "$notes" \
+              "$RUNNER_TEMP/BDam-$tag.tar.gz" \
+              "$RUNNER_TEMP/BDam-$tag.tar.gz.sha256"
+          done < <(git tag --sort=version:refname)

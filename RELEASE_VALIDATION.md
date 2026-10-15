@@ -1,4 +1,19 @@
-# v0.2.0 validation — 14 October 2026
+# Release validation
+
+## v0.2.1 — 15 October 2026
+
+This release includes the subsequent mean-inflow default change to 0.1 m3/s,
+results-viewer defaults, lake-numbering documentation and downstream
+channel-bed outlet-invert correction. See `CHANGELOG.md` for details.
+The full-run results below apply to the historical v0.2.0 tag and must not
+be presented as validation of the later inflow and outlet changes. No new
+full MODFLOW validation was performed as part of release packaging.
+
+The current viewer default is `~/BDamRuns/bdam-q0p1-20261015/BDam`.
+The historical output root below remains available through an explicit
+argument to `LaunchBDamResultsViewerApp`.
+
+## v0.2.0 validation — 14 October 2026
 
 The promoted package completed a fresh default run with MATLAB R2025b, Python
 3.12.1, FloPy 3.10.0, h5py 3.16.0, NumPy 2.5.2 and MODFLOW 6.7.0. Geometry and
@@ -34,9 +49,9 @@ This release run does not add another no-dam continuation or establish equilibri
 Local output root:
 `~/BDamRuns/bdam-v0.2.0-20261014/BDam`
 
-`LaunchBDamResultsViewerApp` selects this root; click **Load**. An explicit
-output-root argument still selects any other complete run. Directly constructing
-`BDamResultsViewerApp` retains its existing default folder behavior.
+At the v0.2.0 tag, `LaunchBDamResultsViewerApp` selected this root; click
+**Load**. In newer releases, pass this output root explicitly to inspect the
+historical run.
 
 Detailed local receipts are `completion_checks.json`, `results_loader_checks.json`,
 `model_runner.log` and `loader_validation.log` in the parent run directory.
