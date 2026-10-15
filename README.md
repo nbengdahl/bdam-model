@@ -1,19 +1,20 @@
 # BDam model package
 
-## River formulation (v0.2.0)
+## River formulation (v0.2.1)
 
 The default uses coarse Manning-connected LAK river pools: eight before the dam,
 then one pond and two downstream pools on the default terrain. Upper pond banks
 are excluded from groundwater exchange, while full connected topography supplies
 storage. Installation conserves surface volume. See [RIVER_REFINEMENTS.md](RIVER_REFINEMENTS.md)
 for settings, validation evidence, observation meanings and remaining limitations.
-The fresh release run and viewer default are recorded in [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md).
+Historical v0.2.0 full-run validation and the scope of the v0.2.1 changes are
+recorded in [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md).
 The current workflow is 0 fall / 4 monthly / 1 weekly spinup years and two weekly
 pre-dam plus two post-dam years. Historical timing/head benchmarks below describe
 earlier formulations and are retained only as historical evidence.
 
 
-> **Release status:** BDam v0.2.0 is a usable but uncalibrated demonstration
+> **Release status:** BDam v0.2.1 is a usable but uncalibrated demonstration
 > framework. It is not a calibrated field model, and its interfaces and model
 > formulation may change before v1.0.0.
 

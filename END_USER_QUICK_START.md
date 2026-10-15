@@ -1,6 +1,6 @@
 # BDam model end-user quick-start manual
 
-## River formulation (v0.2.0)
+## River formulation (v0.2.1)
 
 The default uses coarse Manning-connected LAK river pools: eight before the dam,
 then one pond and two downstream pools on the default terrain. Upper pond banks
@@ -133,9 +133,9 @@ path consistently in the commands below and keep the same folder layout.
 
 ```zsh
 mkdir -p "$HOME/BDamRuns/bdam-run-mycase"
-cp /path/to/BDam-v0.2.0.tar.gz \
-  "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.0.tar.gz"
-tar -xzf "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.0.tar.gz" \
+cp /path/to/BDam-v0.2.1.tar.gz \
+  "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.1.tar.gz"
+tar -xzf "$HOME/BDamRuns/bdam-run-mycase/BDam-v0.2.1.tar.gz" \
   -C "$HOME/BDamRuns/bdam-run-mycase"
 cd "$HOME/BDamRuns/bdam-run-mycase/BDam"
 ```
