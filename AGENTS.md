@@ -350,3 +350,10 @@ expecting every generated text file to have the same bytes.
 Timestamp, path, container-layout, and elapsed-time differences are expected.
 Any numerical dataset, summary, monitoring, budget, or state difference is
 substantive and must be reported.
+
+## Dam height input naming
+
+The current input is `dam_height_m`, in meters above the sampled dam toe.
+Use this name in parameter objects, defaults, examples and guides.
+A pure naming/documentation change requires static consistency checks;
+do not run preparation or the numerical model solely for this rename.

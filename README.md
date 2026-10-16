@@ -1,5 +1,12 @@
 # BDam model package
 
+## Dam height parameter
+
+Use `dam_height_m` for the dam height in meters above the sampled dam toe
+(default 1.5 m). This is the dam height itself. Update saved parameter
+files to use the current field name; the numerical value and dam geometry
+calculation are unchanged.
+
 ## River formulation (v0.2.1)
 
 The default uses coarse Manning-connected LAK river pools: eight before the dam,

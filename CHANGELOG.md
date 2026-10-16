@@ -1,5 +1,12 @@
 # Changelog
 
+## Dam height parameter name — 2026-10-16
+
+- Name the dam height input `dam_height_m` consistently in source, defaults,
+  examples and documentation; label the terrain control as Dam height.
+- Preserve its values and calculation. Validation for this naming-only
+  change is static; no model run was performed.
+
 ## 0.2.1 — 2026-10-15
 
 - Select river Manning outlet inverts from the downstream-most channel-bed

@@ -138,15 +138,15 @@ classdef BDamTerrainApp < matlab.apps.AppBase
             damLayout.RowHeight = {28,28,28,22};
             damLayout.ColumnWidth = {"1x",105};
             damLayout.Padding = [7 7 7 7];
-            app.Controls.DamMaximum = app.addNumericField(damLayout,1, ...
-                "Maximum height (m)",1.5,@(~,~)app.profileInputChanged(), ...
-                "Maximum dam crest height above the channel bottom.");
+            app.Controls.DamHeight = app.addNumericField(damLayout,1, ...
+                "Dam height (m)",1.5,@(~,~)app.profileInputChanged(), ...
+                "Dam crest height above the sampled dam toe, in meters.");
             app.Controls.DamFraction = app.addNumericField(damLayout,2, ...
                 "Fraction upstream",0.25,@(~,~)app.terrainInputChanged(), ...
                 "Fraction of centerline distance measured from the downstream end.");
             app.Controls.PlotLake = uicheckbox(damLayout, ...
                 "Text","Plot Lake","Value",false, ...
-                "Tooltip","Show the connected lake at maximum dam elevation.", ...
+                "Tooltip","Show the connected lake at dam crest elevation.", ...
                 "ValueChangedFcn",@(~,~)app.plotLakeChanged());
             app.Controls.PlotLake.Layout.Row = 3;
             app.Controls.PlotLake.Layout.Column = [1 2];
@@ -275,7 +275,7 @@ classdef BDamTerrainApp < matlab.apps.AppBase
             parameters.transverse_slopes = ...
                 [app.Controls.TransverseLeft.Value app.Controls.TransverseRight.Value];
             parameters.vertical_offset_m = app.Controls.VerticalOffset.Value;
-            parameters.dam_max_m = app.Controls.DamMaximum.Value;
+            parameters.dam_height_m = app.Controls.DamHeight.Value;
             parameters.domain_length_x_m = app.Controls.LengthX.Value;
             parameters.domain_length_y_m = app.Controls.LengthY.Value;
             parameters.spacing_x_m = app.Controls.SpacingX.Value;
@@ -333,7 +333,7 @@ classdef BDamTerrainApp < matlab.apps.AppBase
             if ~isempty(fieldnames(app.TerrainData))
                 daspect(app.TerrainAxes,[1 1 1/factor]);
                 title(app.TerrainAxes,sprintf( ...
-                    "Terrain and Maximum Dam Wall (%gx vertical exaggeration)",factor));
+                    "Terrain and Dam Wall (%gx vertical exaggeration)",factor));
             end
             if app.TerrainCurrent
                 app.TerrainParameters.vertical_exaggeration = factor;
@@ -392,7 +392,7 @@ classdef BDamTerrainApp < matlab.apps.AppBase
             app.Controls.TransverseLeft.Value = parameters.transverse_slopes(1);
             app.Controls.TransverseRight.Value = parameters.transverse_slopes(2);
             app.Controls.VerticalOffset.Value = parameters.vertical_offset_m;
-            app.Controls.DamMaximum.Value = parameters.dam_max_m;
+            app.Controls.DamHeight.Value = parameters.dam_height_m;
             app.Controls.LengthX.Value = parameters.domain_length_x_m;
             app.Controls.LengthY.Value = parameters.domain_length_y_m;
             app.Controls.SpacingX.Value = parameters.spacing_x_m;
@@ -434,10 +434,10 @@ classdef BDamTerrainApp < matlab.apps.AppBase
                 "LineWidth",2,"Color",[0.10 0.30 0.55], ...
                 "DisplayName","Land surface");
             hold(app.CrossSectionAxes,"on");
-            yline(app.CrossSectionAxes,parameters.dam_max_m,"--", ...
-                "Maximum dam level","LineWidth",2,"Color",[0 0.35 1], ...
+            yline(app.CrossSectionAxes,parameters.dam_height_m,"--", ...
+                "Dam height","LineWidth",2,"Color",[0 0.35 1], ...
                 "LabelHorizontalAlignment","center", ...
-                "DisplayName","Maximum dam level");
+                "DisplayName","Dam height");
             hold(app.CrossSectionAxes,"off");
             grid(app.CrossSectionAxes,"on");
             app.CrossSectionAxes.XTickMode = "auto";
@@ -569,7 +569,7 @@ classdef BDamTerrainApp < matlab.apps.AppBase
             zlabel(app.TerrainAxes,"Elevation (m)");
             factor = app.TerrainParameters.vertical_exaggeration;
             title(app.TerrainAxes,sprintf( ...
-                "Terrain and Maximum Dam Wall (%gx vertical exaggeration)",factor));
+                "Terrain and Dam Wall (%gx vertical exaggeration)",factor));
             grid(app.TerrainAxes,"on");
             app.TerrainAxes.XTickMode = "auto";
             app.TerrainAxes.YTickMode = "auto";

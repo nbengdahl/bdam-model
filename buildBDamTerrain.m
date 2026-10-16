@@ -12,7 +12,7 @@ end
 required = ["domain_length_y_m", "spacing_y_m", "origin_y_m", ...
     "sine_periods", "sine_amplitude_m", "regional_longitudinal_slope", ...
     "channel_longitudinal_slope", "dam_relative_distance_upstream", ...
-    "dam_max_m", "domain_length_x_m", "spacing_x_m", "origin_x_m", ...
+    "dam_height_m", "domain_length_x_m", "spacing_x_m", "origin_x_m", ...
     "depths_m"];
 missing = required(~isfield(parameters, required));
 if ~isempty(missing)
@@ -34,7 +34,7 @@ channel_slope = finiteScalar(parameters.channel_longitudinal_slope, ...
     "channel longitudinal slope");
 dam_fraction = finiteScalar(parameters.dam_relative_distance_upstream, ...
     "relative dam distance");
-dam_max = finiteScalar(parameters.dam_max_m, "maximum dam height");
+dam_max = finiteScalar(parameters.dam_height_m, "dam height");
 depths = parameters.depths_m(:)';
 
 if Ly <= 0 || dy <= 0 || Lx <= 0 || dx <= 0
@@ -286,7 +286,7 @@ lake_outline_segments = maskContourSegments(lake_x,lake_y,lake_display_mask);
 
 if ~any(lake_footprint_mask,"all")
     warnings(end+1,1) = ...
-        "The maximum dam elevation does not create a connected upstream lake.";
+        "The dam crest elevation does not create a connected upstream lake.";
 end
 if regional_slope < 0
     lake_touches_upstream_edge = any(lake_footprint_mask(:,1),"all");
