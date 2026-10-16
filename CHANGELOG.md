@@ -1,5 +1,12 @@
 ## Solver synchronization — 14 October 2026
 
+## Dam height parameter name — 2026-10-16
+
+- Name the dam height input `dam_height_m` consistently in source, defaults,
+  examples and documentation; label the terrain control as Dam height.
+- Preserve its values and calculation. Validation for this naming-only
+  change is static; no model run was performed.
+
 - Align both IMS profiles with main's 2000-iteration allowance, preserving
   strict closure, damping, diagnostics and campaign execution safeguards.
 - Replace annual-first spinup with 0/5/2 monthly-first conditioning while

@@ -15,7 +15,7 @@ parameters.left_side_slopes = [0.25 1.5];
 parameters.right_side_slopes = [0.5 2.5];
 parameters.transverse_slopes = [0.01 0.02];
 parameters.vertical_offset_m = 0.25;
-parameters.dam_max_m = 1.5;
+parameters.dam_height_m = 1.5;
 parameters.domain_length_x_m = 70;
 parameters.domain_length_y_m = 140;
 parameters.spacing_x_m = 1;
@@ -43,7 +43,7 @@ geometry_handoff = saveBDamGeometry(output_path,terrain,profile,parameters); %#o
 %% Review plots (not inputs)
 figure("Name","BDam cross section");
 plot(profile.offset_m,profile.elevation_m,"LineWidth",2); grid on; hold on
-yline(parameters.dam_max_m,"--k","Maximum dam height","LineWidth",1.5);
+yline(parameters.dam_height_m,"--k","Dam height","LineWidth",1.5);
 xlabel("Distance normal to centerline (m)"); ylabel("Elevation (m)");
 title("Generated channel cross section");
 

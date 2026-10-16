@@ -373,3 +373,10 @@ retention is explicit and occurs only after full validation; it keeps summaries,
 QA, solver statistics, logs and restart states but does not support the existing
 binary Results Viewer. Failed workspaces remain intact. Resume only with matching
 source/input/configuration fingerprints and validated completion receipts.
+
+## Dam height input naming
+
+The current input is `dam_height_m`, in meters above the sampled dam toe.
+Use this name in parameter objects, defaults, examples and guides.
+A pure naming/documentation change requires static consistency checks;
+do not run preparation or the numerical model solely for this rename.

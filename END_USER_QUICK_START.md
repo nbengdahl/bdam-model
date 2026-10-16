@@ -1,5 +1,12 @@
 # BDam model end-user quick-start manual
 
+## Dam height parameter
+
+Use `dam_height_m` for the dam height in meters above the sampled dam toe
+(default 1.5 m). This is the dam height itself. Update saved parameter
+files to use the current field name; the numerical value and dam geometry
+calculation are unchanged.
+
 ## River formulation (v0.2.1)
 
 The default uses coarse Manning-connected LAK river pools: eight before the dam,
@@ -372,7 +379,7 @@ order is left side followed by right side.
 | Input | Default | Units | Engineering meaning and requirement |
 |---|---:|---|---|
 | `vertical_offset_m` | 0.25 | m | Floodplain step above the outer channel banks; nonnegative |
-| `dam_max_m` | 1.5 | m | BDA crest height above the sampled dam toe; nonnegative |
+| `dam_height_m` | 1.5 | m | BDA crest height above the sampled dam toe; nonnegative |
 | `domain_length_x_m` | 50 | m | Transverse domain width; positive and divisible by `spacing_x_m` |
 | `domain_length_y_m` | 100 | m | Projected channel-reach length; positive and divisible by `spacing_y_m` |
 | `spacing_x_m` | 1 | m | X cell width; positive |
