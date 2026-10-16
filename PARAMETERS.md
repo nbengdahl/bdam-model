@@ -6,6 +6,41 @@ optimizer integrations. For first-run setup and results, use
 A row is a requested case, never an axis. The model does not insert a reference,
 expand vectors, sample parameters, or assign objective penalties implicitly.
 
+## Defaults and overrides
+
+You only need to supply the parameters you want to change. The authoritative
+scientific defaults are in [bdam_parameter_schema.json](bdam_parameter_schema.json),
+under `parameters`: each field has a `default` value. The generated
+[parameter reference](PARAMETER_REFERENCE.md) lists these defaults for readers.
+
+For every case, values are resolved in this order:
+
+1. Start with registry defaults.
+2. Apply `shared` scientific settings from the study configuration.
+3. Apply values supplied in that case's row, overriding either earlier source.
+4. Resolve supported automatic (`null`) values using the final case settings.
+
+For example, `geometry.dam_height_m` defaults to 1.5 m. If the study's `shared`
+settings set it to 1.8 m, a row omitting it uses 1.8 m; a row specifying 2.0 m
+uses 2.0 m. With neither override, it remains 1.5 m. Every row starts from the
+same defaults/shared settings; values do not carry forward from previous rows.
+
+In CSV tables, omit a column to inherit its value for all rows. A blank cell in
+an included column generally fails validation; it does not mean "use default."
+Supported automatic values use the JSON token `null`; optional empty file
+paths can use the JSON token `""`. Automatic values may depend on other case
+parameters, as listed in the reference.
+
+Start with [examples/paired_cases.csv](examples/paired_cases.csv), or generate a
+complete template from a local package copy with
+`python3 -m bdam template all-parameters.csv`.
+Use shared settings or case rows for study-specific changes. If changing the
+model's baseline defaults in source, keep the registry's `defaults` MATLAB mirror
+and applicable `scalar_defaults` deprecated-adapter mirror consistent, then
+regenerate the parameter reference. `MakeInputs.m` has no editable defaults block.
+Existing frozen studies retain their captured source/settings; use a fresh study
+to adopt changed registry defaults.
+
 ## Local setup
 
 Copy the complete package to local, nonsynchronized storage. Install the pinned

@@ -54,6 +54,17 @@ dated evidence, not current configuration instructions.
 | MF6 packages, schedule/restarts and numerical QA | `build_bdam_simulation.py` |
 | Completed-run loader, binary readers and viewer | `loadBDamResults.m`, `BDamMF6HeadReader.m`, `readBDamMF6InitialWaterSurface.m`, `BDamResultsViewerApp.m` |
 
+Scientific defaults are the per-field `default` values in
+`bdam_parameter_schema.json` -> `parameters`. Resolve each case independently:
+registry defaults -> shared scientific settings -> case-row overrides ->
+supported automatic/dependent values. Omitted columns inherit; ordinary blank
+CSV cells fail.
+Never fill omitted inputs from an earlier row. Prefer shared/row overrides for
+study-specific changes; baseline edits must update the mirrors and reference.
+The human explanation and worked example are in
+`PARAMETERS.md#defaults-and-overrides`; the sample table is
+`examples/paired_cases.csv`.
+
 The registry's `parameters` is authoritative; `defaults` is its MATLAB mirror,
 `scalar_defaults` supports only the deprecated vector adapter. Keep mirrors
 consistent. Regenerate `PARAMETER_REFERENCE.md` with

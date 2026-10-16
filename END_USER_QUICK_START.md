@@ -12,6 +12,18 @@ This guide is for people preparing or inspecting simulations. Use
 [PARAMETER_REFERENCE.md](PARAMETER_REFERENCE.md) for scientific inputs, and
 [AGENTS.md](AGENTS.md) for automated-agent operations and development rules.
 
+## Where defaults come from
+
+Scientific defaults live in `bdam_parameter_schema.json`, under `parameters`,
+in each field's `default` value. The [parameter reference](PARAMETER_REFERENCE.md)
+is the readable listing. A case inherits these defaults, then applies shared
+study settings, then its own table-row values. Omit columns to inherit values;
+ordinary blank cells are errors. Automatic values are resolved afterward.
+See [defaults and overrides](PARAMETERS.md#defaults-and-overrides) for an example
+and blank-file exceptions, and [examples/paired_cases.csv](examples/paired_cases.csv)
+for a small input table. Use study/table overrides for your experiment rather
+than editing the baseline defaults.
+
 ## 1. Prepare a local installation
 
 Copy the complete branch checkout or extract its archive into a new local,

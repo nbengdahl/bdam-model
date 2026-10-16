@@ -29,6 +29,14 @@ framework with synthetic forcing and assumed material properties.
 
 ## Current defaults
 
+Scientific defaults are defined in `bdam_parameter_schema.json`, in each
+`parameters` entry's `default` field. Browse them in the generated
+[parameter reference](PARAMETER_REFERENCE.md). Each case starts from those
+defaults, applies any shared study settings, then applies its own table-row
+values. Omitted columns inherit the resulting values; ordinary blank cells
+are errors. See [defaults and overrides](PARAMETERS.md#defaults-and-overrides)
+for automatic values, blank-file exceptions and a worked example.
+
 - 70 × 140 cells at 1 m spacing; five groundwater layers.
 - Eight Manning-connected river pools before installation; one upstream pond
   and two downstream pools afterward. Positive integer downstream counts are
@@ -90,6 +98,10 @@ sampling, or objective penalty. Repeated scientific configurations may reuse a
 validated execution while retaining separate case records. See `PARAMETERS.md`
 for parallel execution, generated designs, MATLAB/CLI equivalents, failures,
 immutability, retention and reporting.
+
+A ready-to-edit two-case CSV is [examples/paired_cases.csv](examples/paired_cases.csv).
+From a local package copy, `python3 -m bdam template all-parameters.csv` generates
+a template containing all scientific parameters.
 
 ## Results and physical scope
 
