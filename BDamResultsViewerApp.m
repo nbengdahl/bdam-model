@@ -843,6 +843,11 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
                 if app.Controls.ShowLabels.Value
                     labels = erase(targets.name(highlighted),"head_");
                     labels = replace(replace(labels,"_"," "),"1cell","1 cell");
+                    if all(ismember(["original_name","source"],string(targets.Properties.VariableNames)))
+                        csvTargets=targets.source(highlighted)=="csv";
+                        originals=targets.original_name(highlighted);
+                        labels(csvTargets)=originals(csvTargets);
+                    end
                     count = nnz(highlighted);
                     ySigns = repmat([1;-1],ceil(count/2),1);
                     ySigns = ySigns(1:count);

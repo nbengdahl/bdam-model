@@ -19,6 +19,17 @@ classdef evaluateBDamCasesTest < matlab.unittest.TestCase
             testCase.verifyEqual(result.cases(1).resolved_parameters.geometry.bottom_widths_m,[3;10],AbsTol=1e-12);
             testCase.verifyEqual(result.cases(1).resolved_parameters.groundwater_boundary_k_m_per_day,0.01,AbsTol=1e-12);
         end
+        function blankMonitoringFilenameAccepted(testCase)
+            folder=string(tempname); mkdir(folder);
+            testCase.addTeardown(@()rmdir(folder,"s"));
+            cases=table(["a";"b";"c"],["";"   ";string(missing)], ...
+                VariableNames=["case_id","monitoring_points_file"]);
+            result=evaluateBDamCases(cases,folder,"monitoring",Action="submit");
+            testCase.verifyNumElements(result.members,1);
+            for row=1:3
+                testCase.verifyEqual(string(result.cases(row).resolved_parameters.monitoring_points_file),"");
+            end
+        end
         function missingCellRejected(testCase)
             cases=table(string(missing),VariableNames="case_id");
             testCase.verifyError(@()evaluateBDamCases(cases,"unused","bad",Action="submit"),"BDam:MissingCell");

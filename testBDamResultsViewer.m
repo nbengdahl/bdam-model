@@ -86,6 +86,18 @@ folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
 testCase.verifyError(@()loadBDamResults(folder.Folder),"BDam:ResultsGeometry");
 end
 
+function testLoaderUsesCSVLabels(testCase)
+folder=testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+root=createZeroSpinupFixture(folder.Folder);
+path=fullfile(root,"Runs","pre_dam","year_01","monitoring_targets.csv");
+targets=readtable(path,"VariableNamingRule","preserve","TextType","string");
+targets.source="csv"; targets.original_name="Well α — shallow";
+targets.resolved_layer_top_down=1; targets.resolved_z_m=0.5;
+writetable(targets,path);
+result=loadBDamResults(root);
+testCase.verifyEqual(result.Variables.Label(result.Variables.Name=="head_test_m"),"Well α — shallow");
+end
+
 function testLoaderAcceptsZeroSpinupOutput(testCase)
 folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
 root = createZeroSpinupFixture(folder.Folder);

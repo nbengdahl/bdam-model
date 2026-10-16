@@ -27,7 +27,8 @@ same defaults/shared settings; values do not carry forward from previous rows.
 
 In CSV tables, omit a column to inherit its value for all rows. A blank cell in
 an included column generally fails validation; it does not mean "use default."
-Supported automatic values use the JSON token `null`; optional empty file
+The explicit blank `monitoring_points_file` exception selects the monitoring
+grid. Supported automatic values use the JSON token `null`; optional empty file
 paths can use the JSON token `""`. Automatic values may depend on other case
 parameters, as listed in the reference.
 
@@ -115,7 +116,7 @@ python3 -m bdam template all-parameters.csv
 `settings.json` accepts `source`, `shared`, and `execution`. Source defaults to the
 installed package directory. Execution settings are `n_parallel_runs` (default
 1), `retention` (`full` by default, or `compact`), and `matlab` (default `matlab`,
-or an explicit installation executable). Relative hydrograph/hydrofacies paths
+or an explicit installation executable). Relative hydrograph/hydrofacies/monitoring paths
 are resolved against `source`; each execution receives its own immutable copies.
 New submissions generate geometry; supplying a geometry MAT file is rejected.
 
@@ -126,7 +127,7 @@ whole array and indexed assignments for that array in the same override layer.
 
 Defaults resolve in this order: registry, shared scientific settings, row
 overrides, dependent defaults. Omit columns to inherit values. Declared CSV
-cells must be populated. Use the JSON token `null` for supported automatic
+cells must be populated, except a blank `monitoring_points_file` selects the grid. Use the JSON token `null` for supported automatic
 values, and the JSON token `""` for an intentionally empty optional file path.
 Empty vectors are not automatically interpreted as candidate sets or defaults.
 Monthly arrays keep twelve entries; layer arrays match the resolved layer count.
@@ -269,7 +270,7 @@ vertical conductivity multipliers are allowed to retain background aquifer
 conductivity beneath the surface dam. These are preparation capabilities, not
 a promise that every parameter combination converges.
 
-Create new studies for the current v5 source/registry and v7 handoff. Preserve old immutable batches,
+Create new studies for the current v6 source/registry and v8 handoff. Preserve old immutable batches,
 source snapshots and results with their original tools. No automatic manifest,
 handoff or removed-control migration is performed. The default numerical model,
 calendar, solver policy, boundaries and closure tolerances are unchanged.
@@ -332,3 +333,50 @@ packages, with automatic flow reduction disabled. They are not inferred from
 head, hydraulic conductivity or surface inflow. See the boundary contract for
 budgets and interpretation. Existing studies retain their original snapshots;
 regenerate inputs in a fresh study to use these parameters.
+
+## Optional monitoring CSV
+
+`monitoring_points_file` is a filename, default `""`. Relative paths are resolved
+against the study source folder; absolute paths are accepted. The file is copied
+and content-hashed with other scientific inputs. Changed contents create a new
+execution identity. Blank or whitespace-only filenames, including blank case-CSV
+cells, retain the existing four stream points plus six bottom-layer grid points.
+
+A supplied CSV replaces only those six grid points. The four named stream
+points remain at their existing locations and bottom layer. For example:
+
+```json
+{"monitoring_points_file": "examples/monitoring_points.csv"}
+```
+
+```csv
+x,y,z,name
+20,70,0.25,Shallow floodplain
+20,70,4.5,Deeper floodplain
+50,105,2,Upstream right bank
+```
+
+Headers are case-insensitive. X and Y use model coordinates in meters.
+**Z is depth below ground in meters, not elevation or layer number.** Ground is
+the terrain elevation of the containing horizontal cell. The point samples the
+head of the layer containing ground elevation minus depth, without interpolation.
+A point on an internal layer interface selects the deeper layer; terrain and
+model-bottom faces are valid. Horizontal domain faces are valid; an internal
+horizontal cell face selects the cell on the increasing-coordinate side.
+
+Outside-X/Y, negative-depth and below-bottom points are omitted. Preparation
+and monitored workspaces publish `monitoring_omitted.csv` with original data-row
+numbers (first data row = 1), coordinates, names and reasons. Missing/unreadable
+files, missing columns, nonfinite/nonnumeric coordinates, blank retained names
+or retained names duplicated without regard to case are errors. Differently
+named points may sample the same cell. An empty, header-only or entirely omitted
+supplied file leaves the four stream points; it does not restore the grid.
+
+Original names are preserved as viewer labels and as `original_name` in
+`monitoring_targets.csv`. Native observation and summary identifiers are stable
+`head_csv_0001`, etc., using the original data-row number; omitted rows leave
+gaps. Summary columns append `_m`. Targets also record source, row, requested
+depth, derived elevation, resolved cell and resolved cell-center elevation.
+The omission report and metadata are also retained in the preparation manifest
+and standalone HDF5 handoff. Use fresh studies/preparation for registry v6 /
+handoff v8; existing frozen studies retain their original sources and inputs.

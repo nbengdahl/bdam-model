@@ -1,5 +1,5 @@
 {
-  "version": "bdam-parameters-v5",
+  "version": "bdam-parameters-v6",
   "scalar_defaults": {
     "model_bottom_offset": 5.0,
     "n_layers": 5,
@@ -821,6 +821,12 @@
       "type": "number",
       "units": "m3/day (total along bottom-layer edge; positive inflow)",
       "automatic": false
+    },
+    "monitoring_points_file": {
+      "default": "",
+      "type": "string",
+      "units": "CSV filename; x,y in model meters, z depth below ground in meters",
+      "automatic": false
     }
   },
   "defaults": {
@@ -998,7 +1004,8 @@
       "x_min_m3_per_day": 0.0,
       "x_max_m3_per_day": 0.0,
       "y_max_m3_per_day": 0.0
-    }
+    },
+    "monitoring_points_file": ""
   },
   "cross_field_constraints": [
     "dam leakage layer count <= n_layers",

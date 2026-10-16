@@ -9,6 +9,16 @@
 - Preserve its values and calculation. Validation for this naming-only
   change is static; no model run was performed.
 
+### Optional monitoring CSV — 2026-10-16
+
+- Registry v6 / handoff v8 add `monitoring_points_file`, blank by default.
+  Keep four stream points; replace the six grid points with CSV x,y,z,name
+  locations when supplied. Z is depth below ground; sample containing cells.
+- Omit outside points with row/reason reports. Preserve human labels through
+  preparation, native observation-ID mapping, summaries and viewer displays.
+- Snapshot and hash monitoring files; require fresh preparation. Verify using
+  exactly two serial short configurations without full spinup/production runs.
+
 ### Prescribed groundwater edge fluxes — 2026-10-16
 
 Registry v5 / handoff v7 add signed total m³/day inputs on the bottom-layer

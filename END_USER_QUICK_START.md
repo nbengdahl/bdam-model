@@ -188,7 +188,9 @@ checks. No extra final success phrase is required.
 | `weekly_summary.csv` / `daily_summary.csv` | Monitored pre/post heads, stages, storage and fluxes |
 | `bdam.water_balance.json` | GWF, lake-routing and coupled-system budget checks |
 | `bdam.solver_stats.json` | Solver profile, tolerances, iterations, wave capacity and MF6 version |
-| `bdam.heads.csv` | Named point groundwater heads |
+| `bdam.heads.csv` | Groundwater cell heads; head_csv_NNNN IDs map to original CSV names |
+| `monitoring_targets.csv` | IDs/labels, requested depths/elevations and resolved model cells/elevations |
+| `monitoring_omitted.csv` | Supplied points outside the modeled volume, with original rows and reasons |
 | `bdam.lake_fluxes.csv` | Native per-lake stage, storage and flow observations |
 | `bdam.groundwater_boundary_flux.csv` | Signed net downstream DRN or GHB flow |
 | `bdam.specified_groundwater_flux.csv` | Signed bottom-layer −x, +x and +y edge totals and interval volumes |
@@ -272,3 +274,25 @@ from a local source copy; add `--matlab /path/to/matlab` if needed. The
 `--workers` option accepts 1–4 and defaults to 1. An optional zero-case baseline
 comparison is documented by `--help`. Outputs and `edge_flux_verification.json`
 are kept outside production Runs and never certify a full-calendar study.
+
+## Use a monitoring-location file
+
+Set `monitoring_points_file` in shared settings or a case row, for example
+`{"monitoring_points_file": "examples/monitoring_points.csv"}`. The four
+stream points remain. CSV columns `x,y,z,name` replace the six grid points;
+z means meters below local model ground. The file is copied into each frozen
+execution. Leave the filename blank to keep the original ten-point layout.
+Outside points are omitted and listed in `monitoring_omitted.csv`; an empty or
+all-outside supplied file leaves four stream points. Malformed input is an error.
+The viewer displays original CSV names; targets map these to stable head_csv IDs.
+Full conventions and examples are in [PARAMETERS.md](PARAMETERS.md#optional-monitoring-csv).
+
+Monitoring verification uses:
+
+```sh
+python3 tools/verify_monitoring_points.py /absolute/local/fresh-verification \
+  --matlab /path/to/matlab
+```
+
+It runs exactly two configurations, one solver at a time, two one-day pre-dam and two one-day post-dam
+steps per configuration, with no full spinup/production certification.

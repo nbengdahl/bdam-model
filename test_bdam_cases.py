@@ -33,6 +33,15 @@ class ResolutionTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.resolve({"groundwater_edge_flux.y_max_m3_per_day": value})
 
+    def test_monitoring_blank_filename_and_case_csv(self):
+        for value in ("", "  "):
+            self.assertEqual(self.resolve({"monitoring_points_file": value})["monitoring_points_file"], "")
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/"cases.csv"
+            path.write_text('case_id,monitoring_points_file\na,\nb,   \nc,points.csv\n')
+            rows=bdam.read_cases(path)
+            self.assertEqual([row['monitoring_points_file'] for row in rows],["","","points.csv"])
+
     def test_row_defaults_arrays_and_indexed_overrides(self):
         cfg=self.resolve({"n_layers":3,"K_constant":.1,"geometry.bottom_widths_m[1]":3}, {"specific_yield":.15})
         self.assertEqual(cfg["K_by_layer_top_to_bottom"],[.03]*3)
@@ -97,6 +106,31 @@ class StudyTests(unittest.TestCase):
         larger = bdam.Study(Path(self.temp.name)/"explicit-capacity",
                             dict(source=str(HERE), execution=dict(n_parallel_runs=6)))
         self.assertEqual(larger.execution["n_parallel_runs"], 6)
+
+    def test_monitoring_file_snapshot_and_content_identity(self):
+        source=Path(self.temp.name)/"source"
+        source.mkdir()
+        for file in HERE.iterdir():
+            if file.is_file() and file.suffix in (".json",".csv",".py",".m"):
+                (source/file.name).write_bytes(file.read_bytes())
+        file=source/"points.csv"
+        file.write_text('x,y,z,name\n1,1,1,Well A\n')
+        study=bdam.Study(Path(self.temp.name)/"file-study",dict(source=str(source)))
+        first=study.submit([dict(monitoring_points_file='points.csv')],'first')['cases'][0]
+        self.assertEqual(first['status'],'pending')
+        snapshot=Path(first['output_path'])
+        config=rt.read(snapshot/'resolved_config.json')
+        copied=Path(config['monitoring_points_file'])
+        self.assertEqual(copied.read_bytes(),file.read_bytes())
+        self.assertIn('monitoring_points_file',rt.read(snapshot/'provenance.json')['input_hashes'])
+        absolute=study.submit([dict(monitoring_points_file=str(file))],'absolute')['cases'][0]
+        self.assertEqual(absolute['execution_id'],first['execution_id'])
+        file.write_text('x,y,z,name\n1,1,2,Well A\n')
+        changed=study.submit([dict(monitoring_points_file='points.csv')],'changed')['cases'][0]
+        self.assertNotEqual(changed['execution_id'],first['execution_id'])
+        self.assertIn('1,1,1',copied.read_text())
+        missing=study.submit([dict(monitoring_points_file='missing.csv')],'missing')['cases'][0]
+        self.assertEqual(missing['status'],'failed')
 
     def test_paired_rows_duplicates_and_mixed_failures(self):
         batch=self.study.submit([{"case_id":"a","K_constant":.01,"specific_yield":.1},

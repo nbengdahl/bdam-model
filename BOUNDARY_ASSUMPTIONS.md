@@ -31,7 +31,7 @@ represented. Prescribed groundwater totals act independently on the bottom-layer
 minimum-X, maximum-X and maximum-Y edges. The constant GHB and DRN levels
 stay fixed through relaxation, spinup and all monitored years; changing
 upstream inflow cannot change them. There is no exported or unused remote
-river-stage series. Handoff v7 stores mode, levels, resistance, conductance and
+river-stage series. Handoff v8 stores mode, levels, resistance, conductance and
 independent outlet inverts, plus the three signed edge totals. Older handoffs
 require fresh preparation with the current source.
 

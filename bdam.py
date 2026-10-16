@@ -79,7 +79,7 @@ def defaults(schema):
 
 def load_schema(source):
     schema=rt.read(Path(source)/"bdam_parameter_schema.json")
-    if schema.get("version")!="bdam-parameters-v5" or schema.get("defaults")!=defaults(schema):
+    if schema.get("version")!="bdam-parameters-v6" or schema.get("defaults")!=defaults(schema):
         raise ValueError("Unsupported or inconsistent parameter registry; regenerate its MATLAB defaults mirror.")
     return schema
 
@@ -120,7 +120,7 @@ def resolve_case(overrides, shared, schema):
             continue
         kind = spec["type"]
         if kind == "string":
-            if not isinstance(value, str) or (not value.strip() and name != "hydrofacies_points_file"):
+            if not isinstance(value, str) or (not value.strip() and name not in ("hydrofacies_points_file", "monitoring_points_file")):
                 raise ValueError(f"{name} requires text; blank cells are invalid.")
             if "enum" in spec and value not in spec["enum"]:
                 raise ValueError(f"{name} must be one of {spec['enum']}.")
@@ -162,6 +162,7 @@ def resolve_case(overrides, shared, schema):
                 raise ValueError(f"{name} must be <= {spec['maximum']}.")
             if kind == "number":
                 rt.put(config, name, int(value) if float(value).is_integer() else float(value))
+    config["monitoring_points_file"] = config["monitoring_points_file"].strip()
     # Internal execution capacity is supplied separately; never a parameter axis.
     config["n_parallel_runs"] = 1
     config = rt.resolve(config)
@@ -206,7 +207,12 @@ def read_cases(path):
         for row in reader:
             item = {}
             for name, value in row.items():
-                if name is None or value is None or not value.strip():
+                if name is None or value is None:
+                    raise ValueError("CSV rows must have all declared cells populated.")
+                if name == "monitoring_points_file" and not value.strip():
+                    item[name] = ""
+                    continue
+                if not value.strip():
                     raise ValueError("CSV rows must have all declared cells populated.")
                 if name == "case_id" or name.startswith("metadata."):
                     item[name] = value
@@ -356,7 +362,7 @@ class Study:
                 try:
                     config = resolve_case(row["parameters"],self.settings["shared"],self.schema)
                     inputs = {}
-                    for name in ("usgs_hydrograph_file","hydrofacies_points_file"):
+                    for name in ("usgs_hydrograph_file","hydrofacies_points_file","monitoring_points_file"):
                         if config[name]:
                             file = Path(config[name]).expanduser()
                             file = file if file.is_absolute() else self.source/file

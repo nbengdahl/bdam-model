@@ -24,6 +24,7 @@ framework with synthetic forcing and assumed material properties.
 | River geometry, storage, routing and interpretation | [River formulation](RIVER_REFINEMENTS.md) |
 | Groundwater edge fluxes, DRN/GHB and surface outlet | [Boundary contract](BOUNDARY_ASSUMPTIONS.md) |
 | Automated agents modifying or running the model | [Agent runbook](AGENTS.md) |
+| Monitoring CSV contract and verification | [Monitoring validation](MONITORING_VALIDATION.md) |
 | Current validation and historical evidence | [Edge-flux verification](EDGE_FLUX_VALIDATION.md), [cleanup and validation index](CLEANUP_VALIDATION.md) |
 | Previous vector-sweep requests | [Deprecated adapter and migration](SWEEPS.md) |
 
@@ -48,6 +49,10 @@ for automatic values, blank-file exceptions and a worked example.
   precipitation, ET and inflow with optional magnitude, timing and width controls.
 - 0 fall-average / 4 monthly / 1 weekly spinup years, followed by 2 pre-dam and
   2 post-dam years at weekly resolution. Daily monitored output is optional.
+- Four retained stream monitoring points plus six bottom-layer grid points.
+  Optional `monitoring_points_file` replaces the six grid points with CSV
+  `x,y,z,name` locations, where z is depth below ground in meters; outside points
+  are omitted and reported. See [monitoring inputs](PARAMETERS.md#optional-monitoring-csv).
 - Full output retention; one active simulation per study by default.
 
 A default run has six workspaces and 308 saved time steps. The October 15 local

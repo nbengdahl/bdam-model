@@ -48,6 +48,7 @@ dated evidence, not current configuration instructions.
 | Study snapshots, preparation, claims, retention and receipts | `bdam_runtime.py` |
 | MATLAB table bridge and convenience entry point | `evaluateBDamCases.m`, `bdam_matlab_bridge.py`, `MakeInputs.m` |
 | Terrain/geometry and preview app | `buildBDamGeometry.m`, `buildBDamTerrain.m`, `buildBDamCrossSection.m`, `saveBDamGeometry.m`, `BDamTerrainApp.m` |
+| Monitoring locations, depth/cell mapping | `makeBDamMonitoring.m` |
 | Layers, material properties, boundaries and handoffs | `prepareBDamMember.m`, `ExportPreparationForFloPy.m` |
 | Pools, storage, outlet selection and segmentation | `makeCoarseRiverScenario.m`, `bdamRiverPoolEdges.m` |
 | Periodic drivers and MATLAB forcing bridge | `bdam_forcing.py`, `makeBDamPeriodicForcing.m` |
@@ -58,7 +59,7 @@ Scientific defaults are the per-field `default` values in
 `bdam_parameter_schema.json` -> `parameters`. Resolve each case independently:
 registry defaults -> shared scientific settings -> case-row overrides ->
 supported automatic/dependent values. Omitted columns inherit; ordinary blank
-CSV cells fail.
+CSV cells fail, while blank `monitoring_points_file` explicitly selects the grid.
 Never fill omitted inputs from an earlier row. Prefer shared/row overrides for
 study-specific changes; baseline edits must update the mirrors and reference.
 The human explanation and worked example are in
@@ -71,7 +72,7 @@ consistent. Regenerate `PARAMETER_REFERENCE.md` with
 `python3 tools/update_parameter_reference.py` after registry changes. Display-only
 app settings are not scientific fields. Never use configuration `eval`.
 
-Current parameter registry is v5; the HDF5 preparation schema is v7. Removed fields
+Current parameter registry is v6; the HDF5 preparation schema is v8. Removed fields
 `initial_river_depth_above_outlet_bed_m`, `pre_dam_outlet_width_m` and
 `post_dam.initial_depth_above_dam_toe_m` must be rejected. River depth is a fixed
 0.10 m initial condition; channel widths use `river_settings.manning_width_m`.
@@ -122,7 +123,8 @@ blocked by the environment; do not change versions to bypass it.
 MATLAB contracts and viewer tests:
 
 ```matlab
-r = runtests({'tests/makeCoarseRiverScenarioTest.m', ...
+r = runtests({'tests/makeBDamMonitoringTest.m', ...
+    'tests/makeCoarseRiverScenarioTest.m', ...
     'tests/bdamRiverPoolEdgesTest.m','tests/evaluateBDamCasesTest.m', ...
     'tests/prepareBDamMemberTest.m','testBDamResultsViewer.m'});
 assert(~any([r.Failed]));
@@ -211,7 +213,8 @@ Every workspace must have normal termination; nonempty readable GWF heads/budget
 LAK stage/budget and UZF water-content/budget binaries; correct saved times/counts;
 passing `bdam.water_balance.json`; valid solver statistics; raw head/lake/boundary
 observations; `bdam.fluxes.csv`; `bdam.specified_groundwater_flux.csv`; and
-`boundary_assumptions.json`. Confirm the
+`boundary_assumptions.json`. Monitored workspaces also require
+`monitoring_targets.csv` and `monitoring_omitted.csv`. Confirm the
 selected boundary and independent surface outlet persist through all restarts.
 Require spinup/monitored summaries when configured and a conserved dam-installation
 audit when installation occurs. The default has 308 saved steps, 101 spinup and
@@ -250,6 +253,29 @@ Downstream DRN/GHB remains independent. Gross combined groundwater budgets
 include both downstream and prescribed edges; downstream observations and
 DRN/GHB-specific fields retain their downstream-only meaning. Check actual WEL
 budgets against input totals; never reduce prescribed extraction to obtain a pass.
+
+## Monitoring CSV contract and bounded verification
+
+`monitoring_points_file` defaults to blank. Blank/whitespace case-table cells
+select the unchanged four-stream + six-grid layout. A nonblank path is resolved
+against source, copied and hashed like other scientific files. Missing files
+fail; supplied empty/header-only/all-outside files retain only four stream points.
+Keep CSV x/y in model meters; z is depth below the containing column's terrain.
+Use containing cells, select the deeper layer on internal interfaces, and include
+outer domain/top/bottom faces. Omit out-of-volume points with row/reason audits;
+reject malformed coordinates and invalid/duplicate retained names. Multiple
+named observations may share a cell. Preserve original labels; IDs use original
+row numbers as head_csv_NNNN and summary columns add _m. Keep the four stream
+IDs and bottom-layer selection unchanged. The standalone HDF5 must preserve
+all target/omission metadata without its JSON companion. Check viewer labels
+and pre/post alignment including layers/elevations.
+
+This feature has user-authorized short verification: run exactly the grid and
+CSV configurations with `tools/verify_monitoring_points.py`, serially, each with
+two one-day pre-dam and two one-day post-dam steps. No full spinup/production
+run is required. Results must remain separate from production completion
+receipts. Check exact hydraulic-state/budget equivalence between both cases;
+only monitoring outputs may differ. See `MONITORING_VALIDATION.md` for evidence.
 
 ## Dam height input naming
 

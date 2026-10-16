@@ -24,7 +24,7 @@ classdef prepareBDamMemberTest < matlab.unittest.TestCase
             post=fullfile(root,"ModelInput","post_dam","preparation_handoff.h5");
             testCase.verifyTrue(isfile(pre));
             testCase.verifyTrue(isfile(post));
-            testCase.verifyEqual(string(h5readatt(post,"/","schema_version")),"bdam-preparation-hdf5-v7");
+            testCase.verifyEqual(string(h5readatt(post,"/","schema_version")),"bdam-preparation-hdf5-v8");
             for file = [pre,post]
                 testCase.verifyEqual(h5read(file,"/boundaries/edge_flux/x_min_m3_per_day/data"),3);
                 testCase.verifyEqual(h5read(file,"/boundaries/edge_flux/x_max_m3_per_day/data"),-5);

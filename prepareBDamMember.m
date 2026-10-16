@@ -146,8 +146,9 @@ reference_dam = makeDamDefinition(post_dam, dam_settings, X, Y, ZTop, dx, dy, nz
 downstream_zone_mask = ~upstream_zone_mask;
 assert(all(xor(upstream_zone_mask, downstream_zone_mask), "all"), ...
     "Upstream/downstream validation zones must be mutually exclusive and exhaustive.");
-monitoring = makeValidationMonitoring(X, Y, ZTop, channel_mask, upstream_zone_mask, ...
-    downstream_zone_mask, reference_dam, longitudinal_direction, nz);
+monitoring = makeBDamMonitoring(X, Y, ZTop, channel_mask, upstream_zone_mask, ...
+    downstream_zone_mask, reference_dam, longitudinal_direction, nz, Z, dx, dy, ...
+    string(config.monitoring_points_file));
 
 %% 4. Common time series, downstream control, and boundaries
 calendar = makeCalendar(time_resolution);
@@ -596,75 +597,6 @@ function uzf=makeUzfEligibility(lake_mask,nz)
     uzf.rule="Exclude active layer-1 lake cells; begin below-lake UZF at layer 2.";
 end
 
-function monitoring = makeValidationMonitoring(X,Y,ZTop,channel,upstream,downstream,dam,direction,nz)
-    dam_xy=0.5*(dam.endpoint_1_xy+dam.endpoint_2_xy);
-    if direction=="y"
-        coordinates=Y(1,:); dam_coordinate=dam_xy(2);
-        upstream_indices=find(any(upstream,1)); downstream_indices=find(any(downstream,1));
-    else
-        coordinates=X(:,1)'; dam_coordinate=dam_xy(1);
-        upstream_indices=find(any(upstream,2))'; downstream_indices=find(any(downstream,2))';
-    end
-    assert(~isempty(upstream_indices) && ~isempty(downstream_indices), "Dam reference must split the model into two nonempty zones.");
-    [~,q]=min(abs(coordinates(upstream_indices)-dam_coordinate)); up_near=upstream_indices(q);
-    [~,q]=max(abs(coordinates(upstream_indices)-dam_coordinate)); up_end=upstream_indices(q);
-    [~,q]=min(abs(coordinates(upstream_indices)-0.5*(dam_coordinate+coordinates(up_end)))); up_half=upstream_indices(q);
-    [~,q]=min(abs(coordinates(downstream_indices)-dam_coordinate)); down_near=downstream_indices(q);
-    [~,q]=max(abs(coordinates(downstream_indices)-dam_coordinate)); down_end=downstream_indices(q);
-    [~,q]=min(abs(coordinates(downstream_indices)-0.5*(dam_coordinate+coordinates(down_end)))); down_half=downstream_indices(q);
-    stations=[up_half;up_near;down_near;down_half]; points=zeros(4,3); resolved=zeros(4,2);
-    for q=1:4
-        if direction=="y"
-            j=stations(q); candidates=find(channel(:,j)); [~,local]=min(ZTop(candidates,j)); i=candidates(local);
-        else
-            i=stations(q); candidates=find(channel(i,:)); [~,local]=min(ZTop(i,candidates)); j=candidates(local);
-        end
-        points(q,:)=[X(i,j),Y(i,j),0]; resolved(q,:)=[i,j];
-    end
-    % Meandering reaches can project the two dam-adjacent station requests
-    % onto one channel cell. Keep both named channel diagnostics; the six
-    % distributed domain monitors added below are required to be unique.
-    % The named channel stations are geometric diagnostics. On a strongly
-    % curved reach their cell-center projection need not lie strictly on the
-    % analytic dam-side mask; model validity does not depend on that label.
-    names=["head_upstream_half";"head_dam_upstream_1cell"; ...
-        "head_dam_downstream_1cell";"head_downstream_half"];
-    x_targets=min(X(:)) + [0.25 0.75].*(max(X(:))-min(X(:)));
-    y_targets=min(Y(:)) + [0.25 0.50 0.75].*(max(Y(:))-min(Y(:)));
-    domain_points=zeros(6,3); domain_names=strings(6,1);
-    index=1;
-    for x_fraction=[25 75]
-        for y_fraction=[25 50 75]
-            domain_points(index,:)=[x_targets((x_fraction==[25 75])), ...
-                y_targets((y_fraction==[25 50 75])), 0];
-            domain_names(index)=sprintf("head_domain_x%02d_y%02d_bottom",x_fraction,y_fraction);
-            index=index+1;
-        end
-    end
-    monitoring=makeHeadMonitoring([points;domain_points],[names;domain_names],X,Y,nz);
-    resolved=sub2ind(size(ZTop),monitoring.head_points_resolved_i_x,monitoring.head_points_resolved_i_y);
-    assert(numel(unique(resolved(5:end)))==6, "The six domain monitor points must resolve to unique cells.");
-end
-
-function monitoring = makeHeadMonitoring(points, names, X, Y, nz)
-    assert(all(isfinite(points),"all") && all(points(:,1)>=min(X(:)) & points(:,1)<=max(X(:)) & ...
-        points(:,2)>=min(Y(:)) & points(:,2)<=max(Y(:))), "Head-monitor coordinates must be inside the model domain.");
-    requested_layer=points(:,3);
-    assert(all(mod(requested_layer,1)==0 & requested_layer>=0 & requested_layer<=nz), ...
-        "Head-monitor layers must be integers: 0 for bottom or 1 through n_layers top-down.");
-    resolved_layer=requested_layer; resolved_layer(resolved_layer==0)=nz;
-    n=size(points,1); ix=zeros(n,1); iy=zeros(n,1);
-    for q=1:n
-        [~,idx]=min((X-points(q,1)).^2+(Y-points(q,2)).^2,[],"all","linear");
-        [ix(q),iy(q)]=ind2sub(size(X),idx);
-    end
-    monitoring=struct(); monitoring.head_points_requested_xy_layer=points;
-    monitoring.head_point_names=string(names(:)); monitoring.head_points_resolved_i_x=ix;
-    monitoring.head_points_resolved_i_y=iy; monitoring.head_points_resolved_layer_top_down=resolved_layer;
-    monitoring.head_points_resolved_xy=[X(sub2ind(size(X),ix,iy)),Y(sub2ind(size(Y),ix,iy))];
-    monitoring.layer_convention="positive layers are top-down; layer 0 selects the bottom layer";
-end
-
 function makeReviewFigures(X,Y,ZTop,channel,lakes,dam,leakage,ghb,uzf,monitoring,scenario)
     figure("Color","w","Name","BDA preparation review","Units","inches","Position",[1 1 13 8]); tiledlayout(2,2,"TileSpacing","compact");
     nexttile; imagesc(X(:,1),Y(1,:),ZTop'); axis image xy; hold on; contour(X,Y,channel,[.5 .5],"c","LineWidth",1.5);
@@ -683,7 +615,7 @@ end
 function plotMonitoringPoints(monitoring,add_labels)
     xy=monitoring.head_points_resolved_xy;
     if add_labels
-        descriptions=monitoring.head_point_names;
+        descriptions=monitoring.head_point_labels;
         point_handles=gobjects(size(xy,1),1);
         for q=1:size(xy,1)
             point_handles(q)=scatter(xy(q,1),xy(q,2),52,"o","MarkerFaceColor","w","MarkerEdgeColor","k", ...

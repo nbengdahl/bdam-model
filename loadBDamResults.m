@@ -153,6 +153,14 @@ results.HasSpinup = hasSpinupHeads;
 results.SpinupDurationDays = spinupDuration;
 results.MonitoredDurationDays = monitoredDuration;
 results.Variables = monitoringVariables(allSummary);
+if ismember("original_name",string(targetReference.Properties.VariableNames))
+    for point = 1:height(targetReference)
+        if ismember("source",string(targetReference.Properties.VariableNames)) && targetReference.source(point)=="csv"
+            variable=targetReference.name(point)+"_m";
+            results.Variables.Label(results.Variables.Name==variable)=targetReference.original_name(point);
+        end
+    end
+end
 end
 
 function summary = normalizeSummary(summary)
@@ -232,6 +240,11 @@ if ~all(ismember(required,string(targets.Properties.VariableNames))) || isempty(
         "monitoring_targets.csv lacks required name and resolved-coordinate columns.");
 end
 targets.name = lower(string(targets.name));
+for field = ["original_name","source"]
+    if ismember(field,string(targets.Properties.VariableNames))
+        targets.(field)=string(targets.(field));
+    end
+end
 if any(~isfinite(targets.resolved_x_m)) || any(~isfinite(targets.resolved_y_m))
     error("BDam:ResultsTargets", ...
         "Monitoring target coordinates must be finite.");
@@ -243,6 +256,13 @@ equal = height(left) == height(right) && ...
     isequal(left.name,right.name) && ...
     max(abs(left.resolved_x_m-right.resolved_x_m),[],"all") < 1.0e-9 && ...
     max(abs(left.resolved_y_m-right.resolved_y_m),[],"all") < 1.0e-9;
+for field = ["resolved_layer_top_down","resolved_z_m","original_name","source"]
+    presentLeft=ismember(field,string(left.Properties.VariableNames));
+    presentRight=ismember(field,string(right.Properties.VariableNames));
+    if presentLeft~=presentRight || (presentLeft && ~isequal(left.(field),right.(field)))
+        equal=false;
+    end
+end
 end
 
 function [frames,duration] = buildSpinupFrames(readers,definitions,summary)

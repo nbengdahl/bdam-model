@@ -31,6 +31,9 @@ if istable(cases)
         for j=1:numel(names)
             value = cases.(names(j))(i,:);
             if iscell(value) && isscalar(value), value=value{1}; end
+            if names(j)=="monitoring_points_file" && isstring(value) && all(ismissing(value),"all")
+                value="";
+            end
             if isnumeric(value) || isstring(value) || ischar(value)
                 assert(~any(ismissing(value),"all"),"BDam:MissingCell","Table cells cannot be missing.");
             end

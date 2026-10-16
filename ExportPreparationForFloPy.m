@@ -123,6 +123,7 @@ writeArray(h5_path, "/uzf/start_layer_number_top_down", u.start_layer_number_top
 writeArray(h5_path, "/atmosphere/land_uzf_mask", uint8(u.land_atmosphere_mask));
 writeArray(h5_path, "/atmosphere/lake_lak_mask", uint8(u.lake_atmosphere_mask));
 mon = preparation.monitoring;
+writetable(struct2table(mon.omitted_points),fullfile(output_directory,"monitoring_omitted.csv"));
 writeArray(h5_path, "/monitoring/head_points_requested_xy_layer", mon.head_points_requested_xy_layer);
 writeArray(h5_path, "/monitoring/head_points_resolved_i_x", mon.head_points_resolved_i_x);
 writeArray(h5_path, "/monitoring/head_points_resolved_i_y", mon.head_points_resolved_i_y);
@@ -134,7 +135,7 @@ for i = 1:numel(fields), writeArray(h5_path, "/mf6_parameters/" + fields{i}, mf6
 
 manifest = struct();
 manifest.model_version = "0.2.1+parameters-table";
-manifest.schema_version = "bdam-preparation-hdf5-v7";
+manifest.schema_version = "bdam-preparation-hdf5-v8";
 manifest.scenario = char(preparation.metadata.scenario);
 manifest.units = char(preparation.metadata.units);
 manifest.time_resolution = char(preparation.parameters.calendar.resolution);
@@ -159,7 +160,11 @@ manifest.lake_footprint_atmosphere_assumption = "Full storage footprints exclude
 manifest.treatment_only_input_names = cellstr(preparation.parameters.scenario.treatment_only_input_names);
 manifest.hdf5_file = "preparation_handoff.h5";
 manifest.source_script = "MakeInputs.m";
-manifest.monitoring_head_point_names = cellstr(preparation.monitoring.head_point_names);
+manifest.monitoring_head_point_names = cellstr(mon.head_point_names);
+manifest.monitoring_target_metadata = mon.target_metadata;
+manifest.monitoring_omitted_points = mon.omitted_points;
+manifest.monitoring_depth_convention = char(mon.depth_convention);
+manifest.monitoring_points_file = char(mon.input_file);
 manifest.monitoring_layer_convention = char(preparation.monitoring.layer_convention);
 manifest.longitudinal_direction = char(preparation.validation_zones.longitudinal_direction);
 manifest.dam_upstream_side = char(preparation.validation_zones.reference_dam.upstream_side);
@@ -173,6 +178,9 @@ h5writeatt(h5_path,"/","time_resolution",manifest.time_resolution);
 h5writeatt(h5_path,"/","groundwater_boundary_mode",manifest.groundwater_boundary_mode);
 h5writeatt(h5_path,"/","boundary_assumptions",manifest.boundary_assumptions);
 h5writeatt(h5_path,"/","monitoring_head_point_names_json",jsonencode(manifest.monitoring_head_point_names));
+h5writeatt(h5_path,"/","monitoring_target_metadata_json",jsonencode(mon.target_metadata));
+h5writeatt(h5_path,"/","monitoring_omitted_points_json",jsonencode(mon.omitted_points));
+h5writeatt(h5_path,"/","monitoring_depth_convention",mon.depth_convention);
 fid = fopen(manifest_path, "w"); assert(fid > 0, "Cannot create manifest file.");
 fprintf(fid, "%s\n", jsonencode(manifest, PrettyPrint=true)); fclose(fid);
 fprintf("FloPy handoff written:\n  %s\n  %s\n", h5_path, manifest_path);

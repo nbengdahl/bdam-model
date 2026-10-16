@@ -26,7 +26,7 @@ import h5py
 import numpy as np
 import flopy
 
-SCHEMA = "bdam-preparation-hdf5-v7"
+SCHEMA = "bdam-preparation-hdf5-v8"
 REQUIRED_BINARY_OUTPUTS = (
     "bdam.hds", "bdam.cbc", "bdam.lak.stage", "bdam.lak.bud",
     "bdam.uzf.wc", "bdam.uzf.bud",
@@ -371,8 +371,9 @@ def load_handoff(h5_path: Path) -> Handoff:
                     value = value.ravel()[0]
                 return value.decode() if hasattr(value, "decode") else str(value)
             manifest = {key: attribute_text(value) for key, value in h5.attrs.items()}
-            if "monitoring_head_point_names_json" in manifest:
-                manifest["monitoring_head_point_names"] = json.loads(manifest.pop("monitoring_head_point_names_json"))
+            for name in ("monitoring_head_point_names", "monitoring_target_metadata", "monitoring_omitted_points"):
+                if name + "_json" in manifest:
+                    manifest[name] = json.loads(manifest.pop(name + "_json"))
     with h5py.File(h5_path, "r") as h5:
         group = "/surface_water/coarse_river"
         if group + "/enabled/data" in h5:
@@ -658,22 +659,36 @@ def _monitoring(h: Handoff, nlay: int, nrow: int, ncol: int, workspace: Path) ->
     names = h.manifest.get("monitoring_head_point_names", [])
     if len(names) != len(ix):
         names = [f"head_{i + 1:02d}" for i in range(len(ix))]
+    metadata = h.manifest.get("monitoring_target_metadata")
+    if not isinstance(metadata, list) or len(metadata) != len(ix):
+        raise ValueError("Missing or inconsistent monitoring target metadata; regenerate paired inputs.")
     records: list[tuple[str, tuple[int, int, int]]] = []
     rows = []
-    for name, x, y, lay, xy, request in zip(names, ix, iy, layer, resolved_xy, requested):
+    for name, x, y, lay, xy, request, info in zip(names, ix, iy, layer, resolved_xy, requested, metadata):
         if not (1 <= x <= ncol and 1 <= y <= nrow and 1 <= lay <= nlay):
             raise ValueError(f"Head monitor {name!r} resolves outside the MF6 grid.")
         safe_name = str(name).strip().replace(" ", "_")
         cell = (int(lay) - 1, nrow - int(y), int(x) - 1)
         records.append((safe_name, cell))
-        rows.append([safe_name, *request, int(x), int(y), int(lay), *xy, *cell])
+        extra = [info.get(key, "") for key in ("source", "csv_row", "original_name",
+                 "requested_depth_m", "requested_elevation_m", "resolved_z_m")]
+        extra = ["" if isinstance(value, list) and not value else value for value in extra]
+        rows.append([safe_name, *request, int(x), int(y), int(lay), *xy, *cell, *extra])
     with (workspace / "monitoring_targets.csv").open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["name", "requested_x_m", "requested_y_m", "requested_layer_top_down", "resolved_i_x", "resolved_i_y", "resolved_layer_top_down", "resolved_x_m", "resolved_y_m", "mf6_layer_zero_based", "mf6_row_zero_based", "mf6_column_zero_based"])
+        writer.writerow(["name", "requested_x_m", "requested_y_m", "requested_layer_top_down", "resolved_i_x", "resolved_i_y", "resolved_layer_top_down", "resolved_x_m", "resolved_y_m", "mf6_layer_zero_based", "mf6_row_zero_based", "mf6_column_zero_based", "source", "csv_row", "original_name", "requested_depth_m", "requested_elevation_m", "resolved_z_m"])
         writer.writerows(rows)
+    omitted = h.manifest.get("monitoring_omitted_points", [])
+    if isinstance(omitted, dict):
+        omitted = [omitted]
+    with (workspace / "monitoring_omitted.csv").open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=["csv_row", "x", "y", "z", "name", "reason"])
+        writer.writeheader()
+        writer.writerows(omitted)
     (workspace / "monitoring_README.md").write_text(
         "# Monitoring outputs\n\n"
-        "- `bdam.heads.csv` contains simulated groundwater heads in meters at the targets in `monitoring_targets.csv`.\n"
+        "- `bdam.heads.csv` contains direct cell heads in meters at `monitoring_targets.csv` targets. CSV z means depth below model terrain; `original_name` maps head_csv_NNNN IDs to user labels. Requested depths/elevations and resolved cells/elevations are recorded.\n"
+        "- `monitoring_omitted.csv` lists supplied points outside the modeled volume; a supplied empty/all-omitted file retains only the four stream points. A blank filename retains the original six grid points.\n"
         "- `bdam.lake_fluxes.csv` contains MF6 LAK observations. All flux observations, including rainfall and evaporation, are volumetric rates in m3/day; stage is m, volume is m3, and surface-area is m2 if included. The rainfall/evaporation input forcing depths, separately stored in the handoff, are m/day.\n"
         "- Positive/negative signs are MF6's native conventions. `outletN_flow` refers to native outlet N; the final outlet is external. In the coarse post-dam model, outlet 1 is the dam crest transfer. Native lake/outlet IDs are phase-dependent.\n"
         "- `bdam.groundwater_boundary_flux.csv` reports signed net downstream groundwater-boundary exchange; boundary_assumptions.json records DRN or constant GHB, levels, conductance and independent surface outlet.\n"
@@ -1752,6 +1767,49 @@ def _validate_flux_output(workspace: Path, expected_final_time: float) -> None:
             raise RuntimeError(f"Flux output contains a non-finite value: {path}")
 
 
+def _validate_monitoring_metadata(handoff: Handoff, workspace: Path) -> None:
+    """Require published target/depth/label and omission audits to match preparation."""
+    names = handoff.manifest["monitoring_head_point_names"]
+    metadata = handoff.manifest["monitoring_target_metadata"]
+    with (workspace / "monitoring_targets.csv").open(newline="") as stream:
+        targets = list(csv.DictReader(stream))
+    if len(targets) != len(names) or len(metadata) != len(names):
+        raise RuntimeError("Monitoring targets differ from preparation.")
+    indices = {field: handoff.array(path, int).ravel() for field, path in (
+        ("resolved_i_x", "/monitoring/head_points_resolved_i_x"),
+        ("resolved_i_y", "/monitoring/head_points_resolved_i_y"),
+        ("resolved_layer_top_down", "/monitoring/head_points_resolved_layer_top_down"))}
+    for number, (name, info, target) in enumerate(zip(names, metadata, targets)):
+        if (target.get("name") != name or any(target.get(field) != str(info[field])
+                for field in ("source", "original_name")) or
+                int(target.get("csv_row", -1)) != int(info["csv_row"])):
+            raise RuntimeError("Monitoring IDs, labels or source rows differ from preparation.")
+        for field, values in indices.items():
+            if int(target.get(field, -1)) != values[number]:
+                raise RuntimeError("Monitoring resolved cells differ from preparation.")
+        for field in ("requested_depth_m", "requested_elevation_m", "resolved_z_m"):
+            expected = info[field]
+            if isinstance(expected, list) and not expected:
+                valid = target.get(field) == ""
+            else:
+                valid = np.isclose(float(target.get(field, "nan")), expected, atol=1e-10, rtol=1e-12)
+            if not valid:
+                raise RuntimeError("Monitoring depth/elevation audit differs from preparation.")
+    expected = handoff.manifest.get("monitoring_omitted_points", [])
+    if isinstance(expected, dict):
+        expected = [expected]
+    with (workspace / "monitoring_omitted.csv").open(newline="") as stream:
+        omitted = list(csv.DictReader(stream))
+    if len(omitted) != len(expected):
+        raise RuntimeError("Monitoring omission report differs from preparation.")
+    for row, info in zip(omitted, expected):
+        if (int(row["csv_row"]) != info["csv_row"] or
+                row["name"] != info["name"] or row["reason"] != info["reason"] or
+                any(not np.isclose(float(row[field]), info[field], atol=1e-10, rtol=1e-12)
+                    for field in ("x", "y", "z"))):
+            raise RuntimeError("Monitoring omission rows differ from preparation.")
+
+
 def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_final_time: float,
                                   save_monitoring: bool) -> None:
     """Prove that a closed annual workspace is complete and restartable."""
@@ -1822,6 +1880,8 @@ def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_fi
             json.loads(solver_stats_path.read_text()).get("status") != "normal_termination"):
         raise RuntimeError("Workspace is missing valid solver statistics.")
     _validate_monitoring_outputs(workspace, expected_final_time, save_monitoring)
+    if save_monitoring:
+        _validate_monitoring_metadata(handoff, workspace)
     _validate_flux_output(workspace, expected_final_time)
     with (workspace / EDGE_FLUX_OUTPUT).open(newline="") as stream:
         edge_rows = list(csv.DictReader(stream))
