@@ -2,6 +2,13 @@
 
 ## parameters-table (unreleased)
 
+### Dam height parameter name — 2026-10-16
+
+- Name the dam height input `geometry.dam_height_m` consistently in source, defaults,
+  examples and documentation; label the terrain control as Dam height.
+- Preserve its values and calculation. Validation for this naming-only
+  change is static; no model run was performed.
+
 ### Prescribed groundwater edge fluxes — 2026-10-16
 
 Registry v5 / handoff v7 add signed total m³/day inputs on the bottom-layer

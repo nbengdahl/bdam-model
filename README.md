@@ -1,5 +1,12 @@
 # BDam: parameter-table branch
 
+## Dam height parameter
+
+Use `geometry.dam_height_m` for the dam height in meters above the sampled dam toe
+(default 1.5 m). This is the dam height itself. Update saved parameter
+files to use the current field name; the numerical value and dam geometry
+calculation are unchanged.
+
 BDam compares groundwater and surface-water behavior before and after installation
 of a beaver dam analog (BDA). MATLAB generates terrain and physical inputs;
 Python/FloPy builds and runs MODFLOW 6, carries state between phases, checks

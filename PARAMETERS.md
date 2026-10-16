@@ -31,7 +31,7 @@ study.submit([
     {'case_id': 'a', 'K_constant': 0.01, 'specific_yield': 0.1,
      'river_settings.downstream_segments': 1, 'metadata.label': 'paired A'},
     {'case_id': 'b', 'K_constant': 0.02, 'specific_yield': 0.2,
-     'river_settings.downstream_segments': 3, 'geometry.dam_max_m': 1.4},
+     'river_settings.downstream_segments': 3, 'geometry.dam_height_m': 1.4},
 ], 'iteration-1')
 results = study.evaluate('iteration-1')
 
@@ -196,7 +196,7 @@ correlated designs, objective functions, PSO and distributed execution are exter
 Write shared overrides to a local JSON file:
 
 ```json
-{"K_constant": 0.06, "geometry": {"dam_max_m": 1.2}}
+{"K_constant": 0.06, "geometry": {"dam_height_m": 1.2}}
 ```
 
 ```sh
@@ -254,7 +254,7 @@ study scheduling and retention.
 | `specific_yield`, `specific_storage`, `effective_porosity` | Drainable unconfined storage, elastic storage (1/m), and diagnostic saturated groundwater-volume porosity. These do not substitute for UZF residual/saturated water contents. |
 | `channel_half_width_cells`, lakebed K/thickness | Channel mask around each row's transverse minimum and vertical LAK–GWF leakance (K/thickness, default 0.2/day). Connection footprints and storage footprints are distinct. |
 | `river_settings.*` | Downstream pool count, Manning width/roughness, pond connection-height cutoff and river table storage extent. See the river guide for spacing, routing and footprint assumptions. |
-| `geometry.dam_max_m`, `post_dam_weir_width_m`, `dam_settings.*` | Surface crest, active crest-transfer width, shallow under-dam K/K33 multipliers/mask, dam-toe sampling and pond storage-table resolution/extent. These do not directly simulate literal dam porosity or resolve flow inside a dam body. |
+| `geometry.dam_height_m`, `post_dam_weir_width_m`, `dam_settings.*` | Surface crest, active crest-transfer width, shallow under-dam K/K33 multipliers/mask, dam-toe sampling and pond storage-table resolution/extent. These do not directly simulate literal dam porosity or resolve flow inside a dam body. |
 | Groundwater boundary controls | DRN discharge threshold or explicit constant GHB head relative to outlet bed, effective K and resistance length. Automatic boundary K follows K_constant even in by-layer/hydrofacies mode; set it explicitly when needed. |
 | `groundwater_edge_flux.*` | Signed total m³/day on the bottom-layer −x, +x and +y edges, uniformly distributed by length; default zero. Separate WEL packages preserve corner contributions; no automatic flow reduction. |
 | `external_outlet_height_above_bed_m` | Surface Manning invert above local outlet bed. Independent of groundwater levels and upstream flow; there is no hidden remote rating curve. |

@@ -8,7 +8,7 @@ classdef prepareBDamMemberTest < matlab.unittest.TestCase
             config=defaultBDamConfig();
             config.groundwater_edge_flux=struct("x_min_m3_per_day",3, ...
                 "x_max_m3_per_day",-5,"y_max_m3_per_day",7);
-            config.geometry.dam_max_m=0.5;
+            config.geometry.dam_height_m=0.5;
             config.dam_settings.k_multiplier=1;
             config.dam_settings.k33_multiplier=1;
             config.groundwater_boundary_k_m_per_day=config.K_constant;

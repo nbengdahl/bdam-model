@@ -11,7 +11,7 @@ end
 
 required = ["bottom_widths_m", "depths_m", "left_side_slopes", ...
     "right_side_slopes", "transverse_slopes", "vertical_offset_m", ...
-    "dam_max_m", "domain_length_x_m", "spacing_x_m", "origin_x_m"];
+    "dam_height_m", "domain_length_x_m", "spacing_x_m", "origin_x_m"];
 missing = required(~isfield(parameters, required));
 if ~isempty(missing)
     error("BDam:MissingParameter", "Missing cross-section parameter(s): %s", ...
@@ -60,13 +60,13 @@ Lx = finiteScalar(parameters.domain_length_x_m, "domain X length");
 dx = finiteScalar(parameters.spacing_x_m, "X grid spacing");
 x0 = finiteScalar(parameters.origin_x_m, "X origin");
 vertical_offset = finiteScalar(parameters.vertical_offset_m, "vertical offset");
-dam_max = finiteScalar(parameters.dam_max_m, "maximum dam height");
+dam_max = finiteScalar(parameters.dam_height_m, "dam height");
 if Lx <= 0 || dx <= 0
     error("BDam:GridDimensions", "Domain length and grid spacing must be positive.");
 end
 if vertical_offset < 0 || dam_max < 0
     error("BDam:NonnegativeElevation", ...
-        "Vertical offset and maximum dam height cannot be negative.");
+        "Vertical offset and dam height cannot be negative.");
 end
 
 nx_exact = Lx / dx;

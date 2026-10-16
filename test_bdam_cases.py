@@ -58,11 +58,11 @@ class ResolutionTests(unittest.TestCase):
                 self.resolve({name: 1})
 
     def test_low_dam_and_unchanged_aquifer_treatment_resolve(self):
-        cfg = self.resolve({"geometry.dam_max_m": 0.5,
+        cfg = self.resolve({"geometry.dam_height_m": 0.5,
                             "dam_settings.k_multiplier": 1, "dam_settings.k33_multiplier": 1})
-        self.assertEqual(cfg["geometry"]["dam_max_m"], 0.5)
+        self.assertEqual(cfg["geometry"]["dam_height_m"], 0.5)
         with self.assertRaisesRegex(ValueError, "must be >"):
-            self.resolve({"geometry.dam_max_m": 0})
+            self.resolve({"geometry.dam_height_m": 0})
 
     def test_segment_counts_one_two_three(self):
         for n in (1,2,3):

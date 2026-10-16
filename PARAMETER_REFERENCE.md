@@ -136,7 +136,7 @@ initial depth is fixed at 0.10 m and installation conserves inherited volume.
 | `geometry.right_side_slopes` | `[0.5, 2.5]` | array (2 entries) | dimensionless | See preparation constraints |
 | `geometry.transverse_slopes` | `[0.01, 0.02]` | array (2 entries) | dimensionless | See preparation constraints |
 | `geometry.vertical_offset_m` | `0.25` | number | m | See preparation constraints |
-| `geometry.dam_max_m` | `1.5` | number | m | > 0 |
+| `geometry.dam_height_m` | `1.5` | number | m | > 0 |
 | `geometry.domain_length_x_m` | `70.0` | number | m | > 0 |
 | `geometry.domain_length_y_m` | `140.0` | number | m | > 0 |
 | `geometry.spacing_x_m` | `1.0` | number | m | > 0 |

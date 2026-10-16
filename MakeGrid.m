@@ -25,7 +25,7 @@ terrain = buildBDamTerrain(parameters,profile);
 %% Review plots (not inputs)
 figure("Name","BDam cross section");
 plot(profile.offset_m,profile.elevation_m,"LineWidth",2); grid on; hold on
-yline(parameters.dam_max_m,"--k","Maximum dam height","LineWidth",1.5);
+yline(parameters.dam_height_m,"--k","Dam height","LineWidth",1.5);
 xlabel("Distance normal to centerline (m)"); ylabel("Elevation (m)");
 title("Generated channel cross section");
 

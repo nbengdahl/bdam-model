@@ -724,7 +724,7 @@
       "units": "m",
       "automatic": false
     },
-    "geometry.dam_max_m": {
+    "geometry.dam_height_m": {
       "default": 1.5,
       "type": "number",
       "units": "m",
@@ -981,7 +981,7 @@
         0.02
       ],
       "vertical_offset_m": 0.25,
-      "dam_max_m": 1.5,
+      "dam_height_m": 1.5,
       "domain_length_x_m": 70.0,
       "domain_length_y_m": 140.0,
       "spacing_x_m": 1.0,

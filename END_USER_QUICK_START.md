@@ -1,5 +1,12 @@
 # Running and inspecting BDam
 
+## Dam height parameter
+
+Use `geometry.dam_height_m` for the dam height in meters above the sampled dam toe
+(default 1.5 m). This is the dam height itself. Update saved parameter
+files to use the current field name; the numerical value and dam geometry
+calculation are unchanged.
+
 This guide is for people preparing or inspecting simulations. Use
 [PARAMETERS.md](PARAMETERS.md) for case tables and optimizer integration,
 [PARAMETER_REFERENCE.md](PARAMETER_REFERENCE.md) for scientific inputs, and

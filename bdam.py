@@ -179,7 +179,7 @@ def _validate_geometry(p):
         count = p[f"domain_length_{axis}_m"]/p[f"spacing_{axis}_m"]
         if count < 2 or not math.isclose(count, round(count), rel_tol=1e-10, abs_tol=1e-10):
             raise ValueError(f"Geometry {axis} length must contain an integer number of at least two cells.")
-    if not (0 < p["dam_relative_distance_upstream"] < 1) or p["dam_max_m"] <= 0:
+    if not (0 < p["dam_relative_distance_upstream"] < 1) or p["dam_height_m"] <= 0:
         raise ValueError("Dam must be inside the reach and have positive height.")
     if p["regional_longitudinal_slope"] <= 0 or p["channel_longitudinal_slope"] <= 0:
         raise ValueError("Coarse river currently requires positive slopes toward minimum Y.")

@@ -239,3 +239,10 @@ Downstream DRN/GHB remains independent. Gross combined groundwater budgets
 include both downstream and prescribed edges; downstream observations and
 DRN/GHB-specific fields retain their downstream-only meaning. Check actual WEL
 budgets against input totals; never reduce prescribed extraction to obtain a pass.
+
+## Dam height input naming
+
+The current input is `geometry.dam_height_m`, in meters above the sampled dam toe.
+Use this name in parameter objects, defaults, examples and guides.
+A pure naming/documentation change requires static consistency checks;
+do not run preparation or the numerical model solely for this rename.
