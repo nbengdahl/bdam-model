@@ -1,385 +1,241 @@
-# Instructions for AI agents
+# Agent runbook: parameters-table branch
 
-Follow this file exactly. Do not improvise around a failed or quiet run.
+Read `README.md`, `END_USER_QUICK_START.md` and `PARAMETERS.md` before running or
+changing the model. Use `PARAMETER_REFERENCE.md` and the registry for exact inputs;
+read the river/boundary contracts for scientific changes. Validation receipts are
+dated evidence, not current configuration instructions.
 
-## Non-negotiable rules
+## Scope and invariants
 
-1. Read `README.md` and `END_USER_QUICK_START.md` before running anything.
-2. Never run MATLAB, Python, or MODFLOW from Google Drive, OneDrive, Dropbox,
-   iCloud Drive, a network share, or this source folder if it is synchronized.
-3. By default, copy the unopened tarball to a persistent, local,
-   non-synchronized run directory under `~/BDamRuns` and extract it there.
-   Keep source packages and model runs separate. If the user directs a
-   different run folder, use it provided it is local, non-synchronized, and
-   has enough free space.
-4. Install every package in `requirements.txt` once for the selected
-   `python3` interpreter and reuse that interpreter for every BDam run. Never
-   create `.venv` or install Python packages inside an individual run
-   directory. The Python installation may come from any provider; do not
-   assume or require a particular package manager.
-5. Use the packaged default settings unless the user explicitly requests a
-   configuration change.
-6. Run the three build/run commands in the documented order. Do not skip a
-   step and do not hand-edit `Geometry`, `ModelInput`, or `Runs`.
-7. Never add MODFLOW time steps or change the daily/weekly calendar to address
-   convergence or output problems. Unless the user explicitly requests
-   sub-steps, each configured fall-average year has exactly 1 stress period,
-   1 time step, and 1 output; each monthly year has 12; and each weekly year
-   has 52. Counts scale only with configured years (for example, 2/1/1 gives
-   2 annual, 12 monthly, and 52 weekly outputs). The 7-day initial relaxation
-   remains exactly 1 stress period, 1 time step, and 1 output.
-8. For standalone runs, before starting MODFLOW, check for an existing `build_bdam_simulation.py`
-   or `mf6` process. If another model run is active, stop and ask the user
-   whether it should remain active. Do not start a duplicate run.
-9. A quiet terminal does not mean the run is stuck. The runner captures MF6
-   stdout. Check the active `bdam.lst`, file growth, and process activity.
-10. Do not restart a progressing run merely because it is quiet.
-11. Do not declare success from the MF6 termination line alone. Apply every
-    completion check below.
-12. Work through routine environment restrictions without changing the model.
-    Stop only when correctness is uncertain, a required dependency is truly
-    unavailable, validation fails, or proceeding would require a model change.
+1. Execute MATLAB, Python and MODFLOW only from local, nonsynchronized storage.
+   Source may be edited/stored in Google Drive, but active source copies, studies,
+   staging and results must be local. Prefer a fresh persistent `~/BDamRuns/` copy.
+2. Use one persistent Python 3.12+ interpreter with the pinned requirements.
+   Reuse installed compatible packages. Do not create per-run environments,
+   install into synchronized source, use sudo, or override a provider's package
+   protection. A shared persistent environment outside run folders is acceptable.
+3. Use defaults unless the user authorizes scientific changes. Never hand-edit
+   generated geometry, HDF5, MODFLOW inputs, frozen snapshots or results. Code
+   cleanup must preserve default numerical inputs and outputs.
+4. Preserve meters/days, the 365-day October–September water year, and exactly
+   one time step per forcing period. Fall-average years have 1 step, monthly
+   years 12, weekly years 52, daily monitored years 365. A configured fall phase
+   adds one seven-day relaxation with 1 step. No hidden years or substeps.
+5. The default is local outflow-only DRN; constant GHB is explicit. Never infer
+   a downstream head/stage from upstream inflow or derive the surface outlet
+   from a groundwater reference level. Sum gross boundary flows by cell sign.
+6. Keep strict closure/budget tolerances and the runner's solver policy:
+   conservative first modeled year, balanced subsequent solves, robust initial
+   relaxation when configured, 2000 outer-iteration allowance. Do not apply
+   conservative globally or change calendars to force convergence.
+7. No duplicate standalone model run. Inspect processes before starting MF6;
+   identify any active run and ask the user whether to wait or otherwise resolve
+   it. Do not kill existing processes without authorization. Study members may
+   run concurrently through `Study.evaluate`, bounded by shared locks/slots.
+8. A quiet terminal is normal. Monitor active `bdam.lst`, file growth and CPU.
+   Never restart a progressing solve. Preserve failure diagnostics and backups;
+   do not delete immutable requests, lock files or prior runs to force progress.
+9. Normal termination alone is insufficient. Apply the completion checks below.
+   Failed tests/assertions, MF6 failures or failed scientific QA block acceptance;
+   diagnose source defects within the authorized task, but do not relax validation
+   or physical assumptions to obtain a pass.
 
-## Boundary contract
+## Source map and edit boundaries
 
-The default is local outflow-only DRN; constant GHB is an explicit sensitivity
-option. Never infer downstream stages or groundwater heads from the upstream
-hydrograph, derive the surface outlet from a GHB head, or silently migrate old
-handoffs. Use v6 inputs regenerated in order. Preserve the selected mode,
-fixed local reference levels and independent surface outlet through every
-spinup/restart phase. Require `boundary_assumptions.json` and
-`bdam.groundwater_boundary_flux.csv` in each completed workspace. Gross
-groundwater-boundary inflow/outflow must be summed by cell sign before netting.
-See `BOUNDARY_ASSUMPTIONS.md`; numerical closure alone does not validate the
-physical boundary assumptions.
+| Area | Owners |
+| --- | --- |
+| Scientific registry and case resolution | `bdam_parameter_schema.json`, `bdam.py` |
+| Study snapshots, preparation, claims, retention and receipts | `bdam_runtime.py` |
+| MATLAB table bridge and convenience entry point | `evaluateBDamCases.m`, `bdam_matlab_bridge.py`, `MakeInputs.m` |
+| Terrain/geometry and preview app | `buildBDamGeometry.m`, `buildBDamTerrain.m`, `buildBDamCrossSection.m`, `saveBDamGeometry.m`, `BDamTerrainApp.m` |
+| Layers, material properties, boundaries and handoffs | `prepareBDamMember.m`, `ExportPreparationForFloPy.m` |
+| Pools, storage, outlet selection and segmentation | `makeCoarseRiverScenario.m`, `bdamRiverPoolEdges.m` |
+| Periodic drivers and MATLAB forcing bridge | `bdam_forcing.py`, `makeBDamPeriodicForcing.m` |
+| MF6 packages, schedule/restarts and numerical QA | `build_bdam_simulation.py` |
+| Completed-run loader, binary readers and viewer | `loadBDamResults.m`, `BDamMF6HeadReader.m`, `readBDamMF6InitialWaterSurface.m`, `BDamResultsViewerApp.m` |
 
-## Exact run procedure
+The registry's `parameters` is authoritative; `defaults` is its MATLAB mirror,
+`scalar_defaults` supports only the deprecated vector adapter. Keep mirrors
+consistent. Regenerate `PARAMETER_REFERENCE.md` with
+`python3 tools/update_parameter_reference.py` after registry changes. Display-only
+app settings are not scientific fields. Never use configuration `eval`.
 
-The paths below are examples. Replace the source tarball path and choose a
-unique local run name. The default location under the user's home directory
-persists across restarts.
+Current parameter registry is v5; the HDF5 preparation schema is v7. Removed fields
+`initial_river_depth_above_outlet_bed_m`, `pre_dam_outlet_width_m` and
+`post_dam.initial_depth_above_dam_toe_m` must be rejected. River depth is a fixed
+0.10 m initial condition; channel widths use `river_settings.manning_width_m`.
+Pond installation conserves inherited volume, independently of preparation seeds.
+Positive dam heights below 1 m and unity K/K33 multipliers must prepare normally.
 
-### 1. Make a clean local run copy
+Cases are explicit rows. Core submission must not add references, expand scalar
+vectors as axes, drop duplicate/invalid cases, sample, or assign objective penalties.
+Unknown fields and supplied geometry-file inputs are rejected. Preserve native
+arrays and one-based indexed columns. Capacity/retention/MATLAB executable are
+study execution settings, never scientific case columns.
 
-```zsh
-mkdir -p "$HOME/BDamRuns/bdam-run-YYYYMMDD"
-cp /absolute/path/to/BDam-v0.2.1.tar.gz \
-  "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.1.tar.gz"
-tar -xzf "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam-v0.2.1.tar.gz" \
-  -C "$HOME/BDamRuns/bdam-run-YYYYMMDD"
-cd "$HOME/BDamRuns/bdam-run-YYYYMMDD/BDam"
-```
+Keep studies/batches immutable. Use fresh studies for incompatible schema/runtime
+changes; old snapshots require their own tools. Reuse needs matching scientific
+provenance and revalidated completion receipts. Failed preparation/simulation
+attempts remain available. Do not edit a frozen execution to adopt newer source.
 
-Confirm that `pwd` does not contain the name of a cloud or synchronized
-folder. If it does, stop and relocate the run.
+## Local setup and checks
 
-Check available local space before setup:
+Copy the complete branch to a new local folder, including `examples/`, `tests/`
+and `tools/`, but excluding `.git`, environments and generated output. Do not
+assume a released v0.2.1 archive contains this unreleased interface. Verify local
+storage and space (`df -h .`): budget at least 6 GiB for a default run plus more
+for parallel executions, backups and failed attempts. The October 15 default
+retained about 3.4 GiB in `Runs`.
 
-```zsh
-df -h ..
-```
+Put a local executable named `mf6` in `bin/` inside the package or an ancestor;
+copy rather than reference one in synchronized storage. Record its version.
+MODFLOW 6.7.0 is the validation reference; a user-authorized different executable
+is acceptable if its version is reported and all checks pass.
 
-Reserve at least 4 GB for the current 0/4/1 monthly-first spinup plus weekly 2/2
-pre-/post-dam run. More is needed if
-backups will be retained. Confirm that the selected home-directory path is on
-a local disk and is not redirected into a synchronized or network folder.
+From the local package:
 
-### 2. Put MODFLOW in the local run tree
-
-The executable must be named `mf6`. Copy it; do not reference an executable
-inside a synchronized folder during the run.
-
-```zsh
-mkdir -p ../bin
-cp /absolute/path/to/mf6 ../bin/mf6
-chmod +x ../bin/mf6
-../bin/mf6 -v
-```
-
-Expected validated version: `6.7.0 02/05/2026`. Report a different version.
-
-### 3. Install the Python packages and run fast tests
-
-Install the requirements once for the user's selected Python 3.12-or-newer
-interpreter. This is a machine setup step, not a per-run step. The `--user`
-location is shared by all runs made with that interpreter and does not require
-administrator access. If the requirements are already installed, pip verifies
-them without creating duplicates. Never create a `.venv` in the run tree.
-
-```zsh
+```sh
 python3 --version
-python3 -m pip install --user -r requirements.txt
+python3 -m pip show flopy h5py numpy
+../bin/mf6 -v
+export BDAM_PYTHON="$(command -v python3)"
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py test_bdam_sweeps.py
+  python3 -m unittest discover -v -p 'test_*.py'
 ```
 
-All tests must pass. If dependency installation fails because network access
-is blocked, request network permission and retry the same install command.
-Do not change package versions or substitute a different interpreter between
-setup and execution. If the selected Python provider manages packages through
-its own environment mechanism, install `requirements.txt` once into that
-persistent environment and continue using its `python3`; do not create an
-environment inside each BDam run.
+If required pinned packages are missing, install `requirements.txt` once into
+the selected persistent environment. Request network access when an install is
+blocked by the environment; do not change versions to bypass it.
 
-### 4. Check for duplicate runs
+MATLAB contracts and viewer tests:
 
-```zsh
+```matlab
+r = runtests({'tests/makeCoarseRiverScenarioTest.m', ...
+    'tests/bdamRiverPoolEdgesTest.m','tests/evaluateBDamCasesTest.m', ...
+    'tests/prepareBDamMemberTest.m','testBDamResultsViewer.m'});
+assert(~any([r.Failed]));
+```
+
+Set `BDAM_TEST_OUTPUT_ROOT` to a completed full-retention output root to exercise
+the viewer's two optional actual-output tests. Without it, report those skips.
+`tests/studyResultsIntegrationTest.m` additionally needs a completed **study**
+execution with `completion.json`. Run it for study changes against a fresh case.
+Static MATLAB checks (`checkcode`) should have no syntax errors; distinguish
+performance notices from model/assertion failures. Run `git diff --check`.
+
+Before standalone simulation:
+
+```sh
 pgrep -fl 'build_bdam_simulation.py|mf6' || true
 ```
 
-For campaign runs, independent members may run under the campaign-wide capacity
-locks through `bdam_sweeps.py run`; never launch the same member twice. For
-standalone runs, if this shows another real model process, do not start. Identify its run
-directory and ask the user whether to wait for it or terminate it. Never kill
-an existing process without authorization.
+If process inspection is blocked (`sysmon` / `Cannot get process list`), request
+read-only process access and use:
 
-Some managed agent sandboxes do not allow `pgrep` to read the process list and
-may print `Cannot get process list` or a `sysmon` error. That is an environment
-restriction, not a model failure. Request read-only process-inspection
-permission and retry with:
-
-```zsh
+```sh
 ps -axo pid,ppid,state,etime,%cpu,%mem,command | \
   rg 'build_bdam_simulation|/mf6' | rg -v 'rg ' || true
 ```
 
-If `rg` is unavailable, use `grep -E` for this diagnostic only. A process-list
-check that prints no matching model process is a clean result.
+## Build/run order
 
-### 5. Build inputs in order
+Choose one supported path; do not mix independent runners on one output root.
 
-Run from the local `BDam` directory:
+- Standalone: `matlab -batch "run('MakeInputs.m')"`, then the logged Python
+  runner below. MakeInputs generates geometry itself; MakeGrid is optional.
+- Study: submit rows, `Study.prepare(batch_id)` if preparation-only inspection is
+  needed, then `Study.evaluate(batch_id)`. Evaluate prepares automatically.
+  `python3 -m bdam` and `evaluateBDamCases` expose the same operations.
 
-```zsh
-matlab -batch "run('MakeGrid.m')"
-matlab -batch "run('MakeInputs.m')"
-```
+Do not continue unless geometry and paired pre/post `preparation_handoff.h5`
+files exist and are nonempty. Study preparation must have valid `prepared.json`.
+Review grid/layers, dynamic topology, outlet direction, atmospheric masks and
+BDA K/K33 locality. Use `PARAMETERS.md` for environment variables/configuration.
 
-In a managed sandbox, MATLAB may exit with code 1 and no diagnostic because it
-cannot reach its runtime, preferences, or license service. This is not a
-reason to edit a MATLAB script. First locate MATLAB with `command -v matlab`,
-then request permission to run that same installed executable with its normal
-runtime/license access and retry the unchanged `-batch` expression once. If
-the permitted retry still fails, stop and report its output.
-
-Do not continue unless these files exist and are nonempty:
-
-```text
-Geometry/BDamGeometry.mat
-ModelInput/pre_dam/preparation_handoff.h5
-ModelInput/post_dam/preparation_handoff.h5
-```
-
-### 6. Run the model with a visible agent log
-
-Use unbuffered Python output, a writable Matplotlib cache, an explicit local
-staging directory, and `pipefail` so logging cannot hide a failed exit code.
-
-```zsh
+```sh
 mkdir -p ../staging
 set -o pipefail
 MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
-  python3 build_bdam_simulation.py ModelInput \
-  --staging-root ../staging 2>&1 | tee ../model_runner.log
+  python3 build_bdam_simulation.py ModelInput --staging-root ../staging \
+  2>&1 | tee ../model_runner.log
 ```
 
-Do not run this command a second time while the first process is active.
+MATLAB silently exiting 1 in a sandbox may reflect runtime/license restrictions.
+Locate the installed executable, retry the unchanged batch expression once with
+normal runtime/license access, then report a persistent failure. Do not edit
+scientific scripts to work around environment access.
 
-When fall-average spinup is explicitly enabled, its 7-day September--November-average relaxation from planar initial
-conditions uses the robust COMPLEX initialization settings. The runner then
-uses the `conservative` profile only for the first 365-day annual run and
-returns to the faster `balanced` profile for every subsequent run,
-including every remaining fall-average, monthly, and weekly part of staged
-spinup and all monitored pre-dam and post-dam years. The strict closure
-tolerances remain unchanged between profiles. Both profiles explicitly allow
-2000 outer iterations, extending the sweep allowance for shallow-lake convergence; this is
-an iteration allowance, not a change to closure or damping. Do not pass
-`--solver-profile conservative`; the runner manages the one conservative
-first-year solve internally and prevents conservative settings from being applied
-globally. If MF6 specifically reports that UZF `NWAVESETS` must be increased, change
-`mf6_parameters.uzf_nwavesets` from 20 to 40 in `MakeInputs.m`, regenerate the
-paired handoffs, and rerun. Never increase wave sets automatically or alter
-the calendar. Use `--solver-inner-output` only for detailed solver diagnosis.
+For study progress inspect `executions/ID/BDam/status.json`,
+`attempt-NNN/model_runner.log` and that attempt's staging `bdam.lst`. A member
+can wait quietly for a slot. Full retention is default; compact is explicit and
+cannot be opened in the binary viewer.
 
-FloPy may print a line resembling the following during each phase setup:
+## Monitor and complete
 
-```text
-<flopy.mf6.data.mfstructure.MFDataItemStructure object at 0x...>
+Inspect the active staging folder; guard for a missing file during transitions:
+
+```sh
+for workspace in ../staging/bdam-*; do
+  if [ -s "$workspace/bdam.lst" ]; then
+    rg -o 'STRESS PERIOD +[0-9]+' "$workspace/bdam.lst" | tail -1
+    ls -lh "$workspace/bdam.lst"
+  fi
+done
 ```
 
-This is harmless diagnostic noise, not an exception. A real Python failure
-contains `Traceback`, an exception name, or a nonzero command exit status.
+For study runs, use the attempt's staging path. File growth and an active MF6
+process indicate progress. If files stay unchanged and MF6 uses no CPU across
+repeated checks, collect listing tails, paths and process evidence; do not
+restart blindly. `mfsim.lst` is not the live progress log. FloPy's
+`MFDataItemStructure object` line is harmless diagnostic output.
 
-## How to monitor a quiet run
+The full default has six workspaces: `spinup/first_annual` (12 steps, 365 days),
+`spinup/staged` (88 steps, 1460 days), and `pre_dam/year_01`, `year_02`,
+`post_dam/year_01`, `year_02` (52 steps and 365 days each). No relaxation exists
+with zero fall-average years. For nondefaults derive counts/times from
+`bdam_runtime.expected_workspaces`, not a hardcoded default checklist.
 
-The Python log reports phase-level information, but MF6 progress is written
-to `bdam.lst` in the active staging workspace. `mfsim.lst` mostly contains
-startup and final status, so it is the wrong file for live progress.
+Every workspace must have normal termination; nonempty readable GWF heads/budget,
+LAK stage/budget and UZF water-content/budget binaries; correct saved times/counts;
+passing `bdam.water_balance.json`; valid solver statistics; raw head/lake/boundary
+observations; `bdam.fluxes.csv`; `bdam.specified_groundwater_flux.csv`; and
+`boundary_assumptions.json`. Confirm the
+selected boundary and independent surface outlet persist through all restarts.
+Require spinup/monitored summaries when configured and a conserved dam-installation
+audit when installation occurs. The default has 308 saved steps, 101 spinup and
+210 monitored summary rows. Ensure no run process remains active at completion.
+An exit code of zero plus these checks is success; no extra final phrase is required.
 
-Find the active workspace:
+If MF6 explicitly exhausts UZF `NWAVESETS`, use a new case/shared override of
+`mf6_parameters.uzf_nwavesets=40`, regenerate and rerun. Never increase it
+silently or change the calendar. Keep the original failure evidence.
 
-```zsh
-find ../staging -mindepth 1 -maxdepth 1 -type d -name 'bdam-*' -print
-```
+Report absolute output paths, source/configuration, interpreter/package/MATLAB/MF6
+versions, tests/skips, saved counts/times, budgets, warnings and retained diagnostics.
+For code changes affecting preparation or runtime, normally perform a complete default
+run and compare scientific inputs/outputs against a trusted baseline. The prescribed
+edge-flux feature has user-authorized short verification: exactly four case
+configurations (zero, positive, negative, mixed), each with two one-day pre-dam
+and two one-day post-dam steps; no full spinup/production run. A zero-flux
+reference comparison belongs to the zero case. Use `tools/verify_edge_fluxes.py`
+from a local copy. Its worker count defaults to one and cannot exceed four.
+Short-run results must not produce production `completion.json` receipts.
+Ordinary studies default to one worker; explicit larger scientific studies remain
+allowed. For docs-only or unrelated UI edits, use checks appropriate to the
+changed behavior.
+Compare HDF5 datasets, not container bytes; numerical CSV/binary differences are
+substantive. Ignore only known timestamps, paths and elapsed-time text. Never
+weaken QA to obtain agreement.
 
-There should be at most one active staging workspace for this run. Use the
-printed directory in these guarded checks:
+## Prescribed groundwater edge fluxes
 
-```zsh
-active_workspace=$(find ../staging -mindepth 1 -maxdepth 1 \
-  -type d -name 'bdam-*' | head -1)
-if [[ -n "$active_workspace" && -s "$active_workspace/bdam.lst" ]]; then
-  rg -o 'STRESS PERIOD +[0-9]+' "$active_workspace/bdam.lst" | tail -1
-  ls -lh "$active_workspace/bdam.lst"
-  du -sh "$active_workspace"
-else
-  echo "No active bdam.lst yet; the runner may be between annual workspaces."
-fi
-pgrep -fl 'build_bdam_simulation.py|mf6' || true
-```
-
-A growing `bdam.lst` or output workspace plus an active `mf6` process means
-the model is progressing. An empty `Runs` directory is normal while an annual
-workspace is staged: a year appears in `Runs` only after it passes validation.
-
-At an annual transition, the new staging directory can exist for a few seconds
-before `bdam.lst` is created. A one-time missing-file result at that boundary
-is normal. Wait briefly and repeat the guarded check; do not restart. The
-default phase sequence is `spinup` → `pre_dam` → `post_dam`. The runner prints
-an explicit spinup completion line, but it may begin post-dam setup without a
-separate `Completed pre-dam` line. The new post-dam staging directory is the
-evidence that the pre-dam year was published successfully.
-
-Model time follows an October 1--September 30 water year. All forcing,
-and any groundwater-boundary schedule must retain this alignment; elapsed model-time
-counters remain ordinary days from zero.
-
-If no files change and the `mf6` process uses no CPU across repeated checks,
-collect the active staging path and the ends of `bdam.lst` and `mfsim.lst`,
-then report the evidence. Do not change model settings or restart blindly.
-
-## Completion checklist
-
-The monthly-first spinup plus weekly pre-/post-dam run should produce these directories (additional monitored years add their own year folders):
-
-```text
-Runs/spinup/first_annual
-Runs/spinup/staged
-Runs/pre_dam/year_01
-Runs/post_dam/year_01
-```
-
-With zero fall-average years, `spinup/initial_relaxation` is absent. The
-historical `first_annual` directory contains the first 365-day year using 12
-monthly periods. Enabling fall-average years adds the separate 7-day
-`initial_relaxation` workspace and the configured annual fall steps.
-
-For every completed workspace, verify all of the following:
-
-- `mfsim.lst` contains `Normal termination of simulation.`
-- `bdam.hds`, `bdam.cbc`, `bdam.lak.stage`, `bdam.lak.bud`,
-  `bdam.uzf.wc`, and `bdam.uzf.bud` exist and are nonempty.
-- The runner accepted the configured final saved time (7 days for the initial
-  relaxation, 365 days for the first annual spinup workspace, the configured
-  remainder duration for `spinup/staged`, and 365 days for each monitored
-  annual workspace).
-- `bdam.water_balance.json` exists and contains `"status": "pass"`.
-- `bdam.solver_stats.json` exists and reports normal termination, the selected
-  profile, UZF wave capacity, solve time, iteration totals, and MF6 version.
-- Raw point-observation CSVs and `bdam.fluxes.csv` are present in every
-  spinup, pre-dam, and post-dam year.
-- `Runs/spinup_summary.csv` and `Runs/weekly_summary.csv` exist for the default
-  run. Daily mode uses `Runs/daily_summary.csv` instead.
-- No Python or `mf6` process from the run remains active.
-
-The runner may exit without printing a final celebratory message. Exit status
-zero plus the complete validation checklist is success. Do not require an
-extra phrase that the runner does not promise to print.
-
-The default run is expected to use about 2.1 GB in `Runs`. Report the
-absolute run and output paths, configuration, dependency versions, tests,
-completion checks, warnings, and any retained diagnostic staging directory.
-
-## Common mistakes to avoid
-
-- Running inside the project’s Google Drive folder.
-- Starting another run because the terminal is quiet.
-- Watching `mfsim.lst` instead of the active `bdam.lst`.
-- Running several copies of MODFLOW and making all of them slow.
-- Treating a nonfatal Matplotlib cache warning as a model failure. Set
-  `MPLCONFIGDIR` as shown above.
-- Treating an empty `Runs` directory during staging as a failure.
-- Deleting or overwriting `Runs_backup_*` or retained diagnostic staging data
-  without the user’s permission.
-- Editing generated files or weakening validation to force a pass.
-
-## Error-handling ladder
-
-Use this order. Do not jump directly to changing source code or model inputs.
-
-| Symptom | Correct action |
-|---|---|
-| Pip cannot resolve or connect to PyPI in a sandbox | Request network permission and retry the unchanged pinned install command. |
-| Pip says its normal cache directory is unwritable | Continue; this only disables the cache. Do not use `sudo`. |
-| Matplotlib reports an unwritable home cache | Set `MPLCONFIGDIR` to the documented local cache and continue. |
-| `pgrep` cannot inspect processes | Request read-only process permission and use the documented `ps` fallback. |
-| MATLAB exits 1 with no output in a sandbox | Request MATLAB runtime/license access and retry the same command once. |
-| FloPy prints an `MFDataItemStructure object` line | Continue; it is cosmetic. |
-| Active staging directory temporarily lacks `bdam.lst` | Treat it as a possible annual transition and repeat the guarded check shortly. |
-| `Runs` is empty while MF6 is active and staging files grow | Continue monitoring; publication happens only after annual validation. |
-| Required test fails, MATLAB reports a script/model assertion, MF6 exits nonzero, a required output is unreadable, final time is not 365 days, or water balance does not pass | Stop. Preserve the diagnostic staging workspace and report exact evidence. Do not alter physics, calendar, solver rules, or validation. |
-| First 365-day annual solve needs the more robust IMS profile | The runner applies `conservative` only to that first-year solve and automatically resumes every remaining staged-spinup and monitored solve with `balanced`; never apply `conservative` globally. |
-| MF6 reports that UZF `NWAVESETS` must be increased | Change the user-defined value from 20 to 40, regenerate both handoffs with `MakeInputs.m`, and rerun. Increase further only if MF6 repeats the same error. |
-
-## Reproducibility comparisons
-
-When comparing two successful runs, compare scientific content instead of
-expecting every generated text file to have the same bytes.
-
-- Summary CSVs, monitoring CSVs, water-balance JSON, and binary GWF/LAK/UZF
-  results should be compared directly.
-- FloPy input text files contain generation timestamps.
-- MODFLOW listing files contain timestamps, executable paths, and elapsed
-  runtime information.
-- MATLAB geometry files contain an `exported_at` value and a file-creation
-  header.
-- Human-readable preparation manifests contain `exported_at` and the absolute
-  hydrograph path.
-- HDF5 container bytes can differ even when every dataset and attribute is
-  identical; compare HDF5 datasets and attributes, not only file hashes.
-
-Timestamp, path, container-layout, and elapsed-time differences are expected.
-Any numerical dataset, summary, monitoring, budget, or state difference is
-substantive and must be reported.
-
-## Parameter-table branch workflow
-
-Read `PARAMETERS.md` before creating studies. Use `bdam.Study` or the matching
-CLI/MATLAB wrapper. Cases are explicit rows; do not add references, expand
-vectors, drop duplicates or discard invalid cases in the core. Keep all active
-sources, studies, generated geometry and simulations on local nonsynchronized
-storage. Geometry is generated per execution before paired handoff preparation;
-`MakeInputs.m` no longer requires running `MakeGrid.m` first.
-
-The authoritative registry is `bdam_parameter_schema.json`: `parameters` defines
-scientific fields and validation; `defaults` is its nested MATLAB mirror and
-`scalar_defaults` is the deprecated adapter mirror. Keep these synchronized.
-Display-only App values are not scientific parameters. Unknown fields and
-geometry-file inputs must be rejected. Preserve native array meanings.
-
-`river_settings.downstream_segments` defaults to 2 and accepts positive integers.
-Reject counts exceeding downstream longitudinal cells, or creating empty pools.
-Use centerline spacing; add upstream remainder to the upstream-most pool.
-Preserve dynamic lake topology and conservative dam-installation storage transfer.
-
-Execution capacity is a study setting, never a case parameter. Preparation is
-serial; simulations are isolated and bounded across launchers sharing a study.
-Never delete active lock files or change immutable requests/snapshots. Retain
-failed attempts. Resume/reuse requires matching scientific provenance and fully
-validated completion receipts. Full retention is default; compact is explicit.
-Return per-case errors and continue valid cases. Never invent objective penalties.
-
-Frozen sweep campaigns stay untouched and require their original tools.
-The table interface changes input/orchestration, not the existing calendar,
-solver, boundary assumptions or numerical QA requirements above.
+`groundwater_edge_flux.{x_min,x_max,y_max}_m3_per_day` are finite signed total
+m3/day values, all zero by default. Uniformly distribute each total along only
+the bottom layer of its edge; retain independent corner contributions. MF6
+packages are WEL_X_MIN, WEL_X_MAX and WEL_Y_MAX, with no automatic flow reduction.
+The +y edge maps to MF6 row zero, native bottom layer 1 to MF6 layer nlay-1.
+Downstream DRN/GHB remains independent. Gross combined groundwater budgets
+include both downstream and prescribed edges; downstream observations and
+DRN/GHB-specific fields retain their downstream-only meaning. Check actual WEL
+budgets against input totals; never reduce prescribed extraction to obtain a pass.

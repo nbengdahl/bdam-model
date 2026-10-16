@@ -1,5 +1,10 @@
 """Deprecated grid-design adapter. New applications should import bdam."""
-from bdam_runtime import *  # Compatibility exports for existing scientific tests.
+import json
+from pathlib import Path
+import sys
+
+import numpy as np
+from bdam_runtime import HERE, clone, digest, get, put, read, resolve, validate, mark_prepared
 import itertools
 import warnings
 
@@ -56,13 +61,12 @@ def expand(config, scalar_defaults, skip_baseline=False):
     return list(unique.values()), baseline, axes
 
 
-
 def plan(request, root, source=HERE, skip_baseline=False):
     """Translate the old vector request into explicit rows in a new study."""
     from bdam import Study
     warnings.warn("Use bdam.Study and explicit cases; sweep commands are deprecated.", FutureWarning)
     config = read(request)
-    configs, baseline, axes = expand(config, read(Path(source)/"bdam_parameter_schema.json")["scalar_defaults"], skip_baseline)
+    configs, baseline, _ = expand(config, read(Path(source)/"bdam_parameter_schema.json")["scalar_defaults"], skip_baseline)
     cases = []
     for i, item in enumerate(configs):
         item = clone(item)
@@ -73,38 +77,6 @@ def plan(request, root, source=HERE, skip_baseline=False):
         cases.append(dict(case_id=f"grid-{i+1}", parameters=item, metadata=dict(reference=configs[i] == baseline)))
     study = Study(root, dict(source=str(source), execution=dict(n_parallel_runs=config.get("n_parallel_runs", 1))))
     return study.submit(cases, "grid")
-
-
-def collect(manifest):
-    root = Path(manifest["root"])
-    with lock(root/"locks"/"collect.lock", blocking=True):
-        index, summaries = [], []
-        for member in manifest["members"]:
-            path = Path(member["path"])
-            config = read(path/"resolved_config.json")
-            row = dict(member_id=member["id"], baseline=member["baseline"], output_path=str(path), status="pending")
-            if (path/"status.json").exists():
-                row.update({k: v for k, v in read(path/"status.json").items() if k != "id"})
-            if (path/"completion.json").exists() and complete(path, member["fingerprint"]):
-                row.update(status="pass", elapsed_seconds=read(path/"completion.json")["elapsed_seconds"])
-                for summary in sorted((path/"Runs").glob("*_summary.csv")):
-                    with summary.open(newline="") as stream:
-                        for result in csv.DictReader(stream):
-                            summaries.append(dict(member_id=member["id"], summary=summary.name,
-                                                  **{f"parameter.{key}": get(config, key) for key in manifest["axes"]}, **result))
-            elif row["status"] == "pass":
-                row.update(status="invalid", error="Completion validation failed.")
-            row.update({f"parameter.{key}": get(config, key) for key in manifest["axes"]})
-            row["resolved_config"] = json.dumps(config, sort_keys=True)
-            index.append(row)
-        for name, rows in (("member_index.csv", index), ("ensemble_summary.csv", summaries)):
-            fields = list(dict.fromkeys(key for row in rows for key in row)) or ["member_id", "status"]
-            temporary = root/(name+".tmp")
-            with temporary.open("w", newline="") as stream:
-                writer = csv.DictWriter(stream, fieldnames=fields); writer.writeheader(); writer.writerows(rows)
-            temporary.replace(root/name)
-        return index
-
 
 
 def main():

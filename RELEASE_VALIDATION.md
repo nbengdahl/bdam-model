@@ -1,3 +1,8 @@
+> Historical validation record. Configurations, commands and machine-local paths
+> below describe the dated source/run, not current branch defaults. Use
+> [README.md](README.md) for current operation and [CLEANUP_VALIDATION.md](CLEANUP_VALIDATION.md)
+> for the current validation index. Evidence and numerical values are retained.
+
 # Release validation
 
 ## v0.2.1 — 15 October 2026
@@ -9,7 +14,7 @@ The full-run results below apply to the historical v0.2.0 tag and must not
 be presented as validation of the later inflow and outlet changes. No new
 full MODFLOW validation was performed as part of release packaging.
 
-The current viewer default is `~/BDamRuns/bdam-q0p1-20261015/BDam`.
+The v0.2.1 viewer default was `~/BDamRuns/bdam-q0p1-20261015/BDam`.
 The historical output root below remains available through an explicit
 argument to `LaunchBDamResultsViewerApp`.
 
@@ -50,7 +55,7 @@ Local output root:
 `~/BDamRuns/bdam-v0.2.0-20261014/BDam`
 
 At the v0.2.0 tag, `LaunchBDamResultsViewerApp` selected this root; click
-**Load**. In newer releases, pass this output root explicitly to inspect the
+**Load**. On the current branch, pass this output root explicitly to inspect the
 historical run.
 
 Detailed local receipts are `completion_checks.json`, `results_loader_checks.json`,

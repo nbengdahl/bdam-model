@@ -1,9 +1,7 @@
 """Fast scientific and scheduler tests; no MATLAB or MODFLOW processes launched."""
 from __future__ import annotations
 
-import csv
 import os
-import re
 import subprocess
 import sys
 import multiprocessing as mp
@@ -14,13 +12,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
-import h5py
 
 from bdam_forcing import PeriodicCurve, TransformedCurve, generate
-from bdam_sweeps import (expand, get, put, read, write, lock, slot, resolve,
-                         validate, expected_workspaces, compact, run_member,
-                         collect, plan, verify_snapshot, complete, result_hashes,
-                         lock_fds, digest, geometry_fingerprint)
+from bdam_sweeps import expand
+from bdam_runtime import (put, read, write, lock, slot, resolve, expected_workspaces,
+                          compact, run_member, complete, result_hashes, lock_fds, digest)
+
 
 HERE = Path(__file__).resolve().parent
 SCHEMA = read(HERE/"bdam_parameter_schema.json")
@@ -30,7 +27,7 @@ def configuration():
     cfg = {}
     for name, value in SCHEMA["scalar_defaults"].items():
         put(cfg, name, value)
-    cfg.update(groundwater_boundary_mode="drain", pre_dam_outlet_width_m=1., initial_river_depth_above_outlet_bed_m=.1, post_dam={"initial_depth_above_dam_toe_m":1.}, n_parallel_runs=1, time_resolution="weekly", forcing_interpolation="STEPWISE",
+    cfg.update(groundwater_boundary_mode="drain", n_parallel_runs=1, time_resolution="weekly", forcing_interpolation="STEPWISE",
                forcing_mode="periodic", hydraulic_conductivity_mode="constant", longitudinal_direction="y",
                source_geometry_file="Geometry/BDamGeometry.mat", usgs_hydrograph_file="usgs_13348000_hydrograph.csv",
                hydrofacies_points_file="", hydrofacies_points=[], hydrofacies_class_properties=[dict(hydrofacies_id=1,K_m_per_day=.03,K33_m_per_day=.003)],
@@ -183,7 +180,7 @@ class CampaignTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'matrix'): expand(cfg,SCHEMA['scalar_defaults'])
 
     def test_frozen_manifest_has_explicit_version(self):
-        self.assertEqual(SCHEMA['version'], 'bdam-parameters-v3')
+        self.assertEqual(SCHEMA['version'], 'bdam-parameters-v5')
 
     def test_member_lock_and_slots_across_processes(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -247,32 +244,6 @@ class CampaignTests(unittest.TestCase):
                 (path/'Runs'/'weekly_summary.csv').write_text('changed')
                 self.assertFalse(complete(path,'x'))
 
-    def test_baseline_reuse_requires_matching_receipt(self):
-        with tempfile.TemporaryDirectory() as temp:
-            source=(Path(temp)/'reference').resolve(); target=(Path(temp)/'target').resolve(); source.mkdir(); target.mkdir()
-            (source/'Runs').mkdir(); (source/'Runs'/'weekly_summary.csv').write_text('phase,time_days\npre_dam,365\n')
-            write(source/'completion.json',dict(fingerprint='x',status='pass',retention='compact',elapsed_seconds=1))
-            member=dict(id='a',fingerprint='x',path=str(target),baseline=True)
-            manifest=dict(root=temp,n_parallel_runs=1)
-            with patch('bdam_runtime.verify_snapshot',return_value={'fingerprint':'x'}):
-                with patch('bdam_runtime.complete',side_effect=lambda path, fingerprint: Path(path)==source and fingerprint=='x'):
-                    result=run_member(manifest,member,reuse_baseline=source)
-            self.assertTrue(result['reused'])
-            self.assertEqual((target/'Runs'/'weekly_summary.csv').read_bytes(),(source/'Runs'/'weekly_summary.csv').read_bytes())
-
-    def test_geometry_identity_ignores_export_metadata(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path=Path(temp)/'geometry.mat'
-            with h5py.File(path,'w') as stream:
-                for name in ('X','Y','ZTop','dx','dy','parameters','post_dam','dam_settings'):
-                    stream.create_dataset(name,data=np.ones(1))
-                stream.create_dataset('exported_at',data=[1])
-            before=geometry_fingerprint(path)
-            with h5py.File(path,'a') as stream: stream['exported_at'][0]=2
-            self.assertEqual(geometry_fingerprint(path),before)
-            with h5py.File(path,'a') as stream: stream['ZTop'][0]=2
-            self.assertNotEqual(geometry_fingerprint(path),before)
-
     def test_compact_retains_scientific_outputs(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); runs=root/'Runs'; runs.mkdir()
@@ -282,7 +253,7 @@ class CampaignTests(unittest.TestCase):
             self.assertFalse((runs/'bdam.hds').exists())
             self.assertEqual(len(list(runs.iterdir())),4)
 
-    def test_failure_is_retained_and_not_collected_as_success(self):
+    def test_snapshot_failure_is_retained_as_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'member'; path.mkdir()
             write(path/'resolved_config.json',resolve(configuration()))
@@ -290,8 +261,6 @@ class CampaignTests(unittest.TestCase):
             with patch('bdam_runtime.verify_snapshot',side_effect=ValueError('changed snapshot')):
                 result=run_member(manifest,manifest['members'][0])
             self.assertEqual(result['status'],'failed')
-            index=collect(manifest); self.assertEqual(index[0]['status'],'failed')
-            self.assertEqual(len((Path(temp)/'ensemble_summary.csv').read_text().splitlines()),1)
 
 
 if __name__ == '__main__': unittest.main()

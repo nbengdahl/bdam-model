@@ -12,7 +12,7 @@ for i = 1:numel(manifest.members)
         end
         prepareBDamMember(config,root,false);
         python = string(getenv("BDAM_PYTHON")); if python == "", python = "python3"; end
-        command = sprintf('"%s" "%s" mark-prepared "%s"',python,fullfile(root,"bdam_sweeps.py"),root);
+        command = sprintf('"%s" "%s" mark-prepared "%s"',python,fullfile(root,"bdam_runtime.py"),root);
         [status,report] = system(command);
         assert(status == 0,"Could not record prepared handoffs: %s",report);
     catch failure

@@ -1,6 +1,8 @@
 # Parameter-table model interface
 
-This branch is the durable case interface for ensembles and external optimizers.
+This guide is for people building case tables, sensitivity studies and external
+optimizer integrations. For first-run setup and results, use
+[END_USER_QUICK_START.md](END_USER_QUICK_START.md).
 A row is a requested case, never an axis. The model does not insert a reference,
 expand vectors, sample parameters, or assign objective penalties implicitly.
 
@@ -111,9 +113,10 @@ an automatic value for supported automatic columns. Missing values are errors. S
 `BDAM_PYTHON` to the selected Python executable before launching MATLAB.
 
 `MakeInputs.m` is a convenience entry point: set `BDAM_STUDY_ROOT`, `BDAM_CASES`
-(CSV/JSON), and optionally `BDAM_BATCH_ID` (default `inputs`). `BDAM_CONFIG`
-contains shared scientific overrides with nested or dotted names; `BDAM_PREVIEW=1` submits only. Without a
-study root or cases file it prepares a single default case and publishes the
+(CSV/JSON), and optionally `BDAM_BATCH_ID` (default `inputs`). `BDAM_CONFIG` is
+the path to a JSON file containing shared scientific overrides with nested or
+dotted names; `BDAM_PREVIEW=1` submits only. Without a study root it prepares
+one valid scientific execution (the default if no cases file is set) and publishes the
 usual `Geometry/` and `ModelInput/` standalone layout. `MakeGrid.m` remains a
 standalone terrain preview using the same registry defaults. It no longer needs
 to run before `MakeInputs.m`.
@@ -164,3 +167,133 @@ source snapshots to inspect/resume them. No automatic migration is performed.
 
 Implementation evidence and observed numerical limits are recorded in
 [PARAMETER_VALIDATION.md](PARAMETER_VALIDATION.md).
+
+## Forcing transforms
+
+`forcing_mode="periodic"` is the default. Each of `forcing_controls.inflow`,
+`.precipitation` and `.et` has `magnitude_scale=1`, `shift_days=0`,
+`width_factor=1` and automatic `center_day=null`. Positive shifts delay the
+season; centers are elapsed water-year days (0 = October 1), with the first
+baseline daily maximum used automatically.
+
+Nonnegative cyclic Hermite curves join continuously in value and first derivative.
+Their exact integrals supply STEPWISE period means, including the monthly and
+weekly spinup calendars. Magnitude scales annual mass; timing and width preserve
+it for the driver. Width above 1 broadens the seasonal excess above its baseline;
+it is a circular time warp, not an exact standard-deviation multiplier. Inspect
+`forcing_diagnostics.json` for actual annual integral and circular RMS width.
+Land infiltration also uses calendar-month recharge efficiencies, so shifting
+precipitation can change annual infiltration. Lake evaporation follows transformed
+ET. Boundaries/outlet levels do not follow forcing transformations.
+
+`forcing_mode="legacy"` retains the earlier stepwise construction and requires
+identity transform controls. It remains available for deliberate comparisons.
+Each case repeats its climatology each year; stochastic/interannual weather,
+correlated designs, objective functions, PSO and distributed execution are external.
+
+## Standalone configuration example
+
+Write shared overrides to a local JSON file:
+
+```json
+{"K_constant": 0.06, "geometry": {"dam_max_m": 1.2}}
+```
+
+```sh
+export BDAM_PYTHON="$(command -v python3)"
+BDAM_CONFIG=/absolute/local/overrides.json matlab -batch "run('MakeInputs.m')"
+```
+
+MakeInputs environment variables are `BDAM_CONFIG` (shared JSON file path),
+`BDAM_CASES` (CSV/JSON case file path), `BDAM_STUDY_ROOT` (local study directory),
+`BDAM_BATCH_ID` (default `inputs`), `BDAM_PREVIEW=1` (submit only), and `BDAM_PYTHON`.
+Existing study settings/batches are immutable. Changing a standalone configuration
+under an already-used `Study/` requires a fresh package/run folder or an explicit
+new study root. When a study root is set, use study evaluation afterward; the
+standalone `Geometry/` and `ModelInput/` publication is not performed.
+
+## Registry v4 cleanup and migration
+
+The complete catalog is [PARAMETER_REFERENCE.md](PARAMETER_REFERENCE.md), generated
+from `bdam_parameter_schema.json`. The `defaults` mirror supplies MATLAB and the
+`scalar_defaults` mirror supports the deprecated adapter. Check them together
+when changing defaults. No editable scientific input block remains in MakeInputs.
+
+Removed fields are rejected: `initial_river_depth_above_outlet_bed_m`,
+`pre_dam_outlet_width_m`, and `post_dam.initial_depth_above_dam_toe_m`. The first
+two never controlled the coarse-river numerical inputs; river pools initialize
+0.10 m above their lowest bed and channel widths use
+`river_settings.manning_width_m`. The third was a preparation preview depth, not
+the conservative installation state. Pond preparation now uses an internal
+seed depth capped by dam height; installation always conserves pre-dam volume.
+
+Strictly positive dam heights below 1 m can now prepare without overriding a
+legacy preview. Zero height is not accepted as a dam geometry; a no-installation
+monitoring case uses `mf6_parameters.post_dam_years=0`. Unity horizontal and
+vertical conductivity multipliers are allowed to retain background aquifer
+conductivity beneath the surface dam. These are preparation capabilities, not
+a promise that every parameter combination converges.
+
+Create new studies for the current v5 source/registry and v7 handoff. Preserve old immutable batches,
+source snapshots and results with their original tools. No automatic manifest,
+handoff or removed-control migration is performed. The default numerical model,
+calendar, solver policy, boundaries and closure tolerances are unchanged.
+
+## Choosing scientific inputs
+
+The registry catalog supplies exact accepted fields/defaults and individual
+bounds. These groups explain what the inputs control; they are distinct from
+study scheduling and retention.
+
+| Group | Meaning and interactions |
+| --- | --- |
+| `geometry.*` | Two nested trapezoidal channel sections, left/right floodplain slopes and step, domain/grid/origin, sinusoidal centerline, longitudinal grades, and dam height/location. Side slopes are horizontal run per unit rise. X is transverse; Y is longitudinal. The meander and channel must fit inside the domain. |
+| `model_bottom_offset`, `n_layers`, `layer_growth_factor` | Bottom plane below the lowest terrain and geometric layer-thickness growth toward deeper layers. Choose a leakage-layer count no greater than `n_layers`; defaults require at least three layers unless that count is reduced. |
+| `hydraulic_conductivity_mode` | `constant` uses K/K33 constants; `by_layer` uses top-to-bottom arrays; `hydrofacies_points` assigns the nearest horizontal point whose vertical interval contains a cell center, then maps class K/K33. This is deterministic nearest-point assignment, not geostatistical interpolation. |
+| Layer arrays and hydrofacies records | Automatic layer arrays are 0.03 and 0.003 m/day repeated for the resolved layer count, independently of K_constant. Hydrofacies input is a CSV path or inline records with x/y, top/bottom elevation and class ID; class-property records supply K/K33 for every resulting class, including fallback. |
+| `specific_yield`, `specific_storage`, `effective_porosity` | Drainable unconfined storage, elastic storage (1/m), and diagnostic saturated groundwater-volume porosity. These do not substitute for UZF residual/saturated water contents. |
+| `channel_half_width_cells`, lakebed K/thickness | Channel mask around each row's transverse minimum and vertical LAK–GWF leakance (K/thickness, default 0.2/day). Connection footprints and storage footprints are distinct. |
+| `river_settings.*` | Downstream pool count, Manning width/roughness, pond connection-height cutoff and river table storage extent. See the river guide for spacing, routing and footprint assumptions. |
+| `geometry.dam_max_m`, `post_dam_weir_width_m`, `dam_settings.*` | Surface crest, active crest-transfer width, shallow under-dam K/K33 multipliers/mask, dam-toe sampling and pond storage-table resolution/extent. These do not directly simulate literal dam porosity or resolve flow inside a dam body. |
+| Groundwater boundary controls | DRN discharge threshold or explicit constant GHB head relative to outlet bed, effective K and resistance length. Automatic boundary K follows K_constant even in by-layer/hydrofacies mode; set it explicitly when needed. |
+| `groundwater_edge_flux.*` | Signed total m³/day on the bottom-layer −x, +x and +y edges, uniformly distributed by length; default zero. Separate WEL packages preserve corner contributions; no automatic flow reduction. |
+| `external_outlet_height_above_bed_m` | Surface Manning invert above local outlet bed. Independent of groundwater levels and upstream flow; there is no hidden remote rating curve. |
+| Precipitation, ET, recharge and streamflow | Twelve January–December precipitation totals and seasonal ET/recharge factors; synthetic mean inflow/ET and recharge/evaporation fractions. A positive 365-row normalized hydrograph supplies shape, not a field-calibrated absolute flow. |
+| `mf6_parameters.uzf_*` | Residual/saturated/initial moisture, Brooks–Corey exponent, surface depression, ET extinction depth/content, trailing waves and wave-set numerical capacity. Wave capacity is numerical storage, not a calibration parameter. |
+| Initial head and year counts | Regional-slope planar heads anchored at downstream channel bed + configured offset, no clipping to land. Independent spinup and monitored year counts; at least one monitored year is required. Zero post-dam years give no-installation monitoring. |
+
+Atmospheric recharge/ET acts through UZF over land and rainfall/evaporation through
+LAK over storage footprints; RCH/EVT are prohibited to prevent double counting.
+Changing pond footprint changes the land/lake atmospheric partition. A fixed dry
+storage footprint does not recover surface UZF automatically. Review this
+assumption before interpreting rainfall, recharge or evaporation sensitivities.
+
+Schema-valid scalar bounds do not guarantee geometric resolution or nonlinear
+convergence for an entire case. Check preparation status, numerical QA, storage
+adjustment, and matched no-dam controls before using summaries as optimizer objectives.
+
+## Prescribed groundwater edge totals
+
+Supply `groundwater_edge_flux.x_min_m3_per_day`,
+`groundwater_edge_flux.x_max_m3_per_day` and
+`groundwater_edge_flux.y_max_m3_per_day` as finite scalar totals in m³/day.
+Defaults are zero. Positive values enter the domain; negative values leave.
+Each total is distributed uniformly along its bottom-layer edge, independently
+of the other edges and downstream DRN/GHB. Shared corner cells receive both
+edge contributions. Values remain constant through all phases and restarts.
+
+For example, a JSON case row can contain:
+
+```json
+{
+  "groundwater_edge_flux.x_min_m3_per_day": 3,
+  "groundwater_edge_flux.x_max_m3_per_day": -5,
+  "groundwater_edge_flux.y_max_m3_per_day": 7
+}
+```
+
+These are prescribed regional boundary fluxes represented by separate WEL
+packages, with automatic flow reduction disabled. They are not inferred from
+head, hydraulic conductivity or surface inflow. See the boundary contract for
+budgets and interpretation. Existing studies retain their original snapshots;
+regenerate inputs in a fresh study to use these parameters.

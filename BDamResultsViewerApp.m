@@ -242,7 +242,7 @@ classdef BDamResultsViewerApp < matlab.apps.AppBase
                 "Load a completed output folder to view groundwater maps");
             if strlength(outputRoot) == 0
                 appFolder = fileparts(mfilename("fullpath"));
-                outputRoot = fullfile(appFolder,"..","BDam_out");
+                outputRoot = appFolder;
             end
             app.Controls.Folder.Value = char(outputRoot);
             app.setStatus(["Output folder selected:";string(outputRoot); ...

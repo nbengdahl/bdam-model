@@ -58,6 +58,10 @@ writeArray(h5_path, "/boundaries/downstream_groundwater_mask", uint8(b.downstrea
 writeArray(h5_path, "/boundaries/domain_length_m", b.domain_length_m);
 writeArray(h5_path, "/boundaries/local_outlet_bed_m", b.local_outlet_bed_m);
 writeArray(h5_path, "/boundaries/groundwater/mode_code", b.mode_code);
+for edge = ["x_min", "x_max", "y_max"]
+    writeArray(h5_path, "/boundaries/edge_flux/"+edge+"_m3_per_day", ...
+        b.groundwater_edge_flux.(edge+"_m3_per_day"));
+end
 cells = b.groundwater_cells;
 writeArray(h5_path, "/boundaries/groundwater/i_x", cells.i_x);
 writeArray(h5_path, "/boundaries/groundwater/i_y", cells.i_y);
@@ -129,8 +133,8 @@ fields = fieldnames(mf6);
 for i = 1:numel(fields), writeArray(h5_path, "/mf6_parameters/" + fields{i}, mf6.(fields{i})); end
 
 manifest = struct();
-manifest.model_version = "0.2.0";
-manifest.schema_version = "bdam-preparation-hdf5-v6";
+manifest.model_version = "0.2.1+parameters-table";
+manifest.schema_version = "bdam-preparation-hdf5-v7";
 manifest.scenario = char(preparation.metadata.scenario);
 manifest.units = char(preparation.metadata.units);
 manifest.time_resolution = char(preparation.parameters.calendar.resolution);
@@ -146,7 +150,7 @@ manifest.n_lakes = numel(sw.lakes);
 manifest.coarse_river = sw.coarse_river;
 manifest.n_outlets = height(sw.outlets);
 manifest.groundwater_boundary_mode = char(b.downstream);
-manifest.boundary_assumptions = "Local terrain-based discharge threshold or explicit constant GHB assumption; effective C=K*A/L resistance; independent Manning river outlet; no inferred remote heads/stages";
+manifest.boundary_assumptions = "Local terrain-based discharge threshold or explicit constant GHB assumption; effective C=K*A/L resistance; independent Manning river outlet; signed bottom-layer x-min/x-max/y-max edge totals via WEL; no inferred remote heads/stages";
 manifest.external_surface_outlet_invert_m = sw.outlets.invert_elevation_m(end);
 manifest.atmospheric_flux_formulation = "UZF land recharge/ET; LAK precipitation/evaporation; RCH and EVT prohibited";
 manifest.streamflow_forcing_source = char(preparation.parameters.forcing.synthetic_source);

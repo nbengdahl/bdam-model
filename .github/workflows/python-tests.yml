@@ -26,4 +26,6 @@ jobs:
       - name: Run fast workflow tests
         env:
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
-        run: python -m unittest -v test_bdam_workflow.py test_coarse_river.py test_bdam_sweeps.py test_bdam_cases.py
+        run: python -m unittest discover -v -p 'test_*.py'
+      - name: Check parameter reference
+        run: python tools/update_parameter_reference.py --check

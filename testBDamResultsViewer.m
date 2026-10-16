@@ -218,16 +218,17 @@ clear cleanup
 end
 
 function testCompletedRunWhenAvailable(testCase)
-package = fileparts(mfilename("fullpath"));
-root = fullfile(package,"..","BDam_out");
+root = string(getenv("BDAM_TEST_OUTPUT_ROOT"));
 testCase.assumeTrue(isfile(fullfile(root,"Runs","weekly_summary.csv")), ...
-    "The optional completed BDam_out integration fixture is unavailable.");
+    "Set BDAM_TEST_OUTPUT_ROOT to a completed full-retention run.");
 
 results = loadBDamResults(root);
-testCase.verifyEqual(height(results.Scopes.Monitored.Frames),105);
-testCase.verifyEqual(height(results.Scopes.All.Frames),181);
-testCase.verifyEqual(results.Scopes.Monitored.EndDay,730,"AbsTol",1.0e-8);
-testCase.verifyEqual(results.Scopes.All.EndDay,1825,"AbsTol",1.0e-8);
+summary = results.Scopes.Monitored.Summary;
+steps = nnz(summary.event == "completed_step");
+testCase.verifyEqual(height(results.Scopes.Monitored.Frames),steps+1);
+testCase.verifyEqual(results.Scopes.Monitored.EndDay,max(summary.time_days),"AbsTol",1.0e-8);
+testCase.verifyEqual(results.Scopes.All.EndDay, ...
+    results.SpinupDurationDays+results.Scopes.Monitored.EndDay,"AbsTol",1.0e-8);
 
 testCase.verifyEqual(results.Scopes.Monitored.Frames.TimeDays(1),0,"AbsTol",1.0e-12);
 testCase.verifyEqual(results.Scopes.Monitored.Frames.LocalFrame(1),0);
@@ -243,10 +244,9 @@ testCase.verifyEqual(observed,summary.(variable)(row),"AbsTol",1.0e-10);
 end
 
 function testViewerCachesSurfacesAndRetainsMapHandles(testCase)
-package = fileparts(mfilename("fullpath"));
-root = fullfile(package,"..","BDam_out");
+root = string(getenv("BDAM_TEST_OUTPUT_ROOT"));
 testCase.assumeTrue(isfile(fullfile(root,"Runs","weekly_summary.csv")), ...
-    "The optional completed BDam_out integration fixture is unavailable.");
+    "Set BDAM_TEST_OUTPUT_ROOT to a completed full-retention run.");
 
 app = LaunchBDamResultsViewerApp(root);
 cleanup = onCleanup(@()delete(app));

@@ -19,3 +19,18 @@ forcing_request.json
 forcing_diagnostics.json
 
 Study/
+
+# Runtime receipts and portable workstation artifacts
+.pytest_cache/
+.mplconfig/
+*.asv
+*.m~
+/ValidationStudy/
+/prepared.json
+/provenance.json
+/resolved_config.json
+/status.json
+/completion.json
+/campaign.json
+/member_index.csv
+/ensemble_summary.csv

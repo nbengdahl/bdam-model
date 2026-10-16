@@ -51,13 +51,10 @@ groundwater_boundary_resistance_in_domain_lengths = config.groundwater_boundary_
 drain_elevation_above_outlet_bed_m = config.drain_elevation_above_outlet_bed_m;
 constant_ghb_head_above_outlet_bed_m = config.constant_ghb_head_above_outlet_bed_m;
 external_outlet_height_above_bed_m = config.external_outlet_height_above_bed_m;
-initial_river_depth_above_outlet_bed_m = config.initial_river_depth_above_outlet_bed_m;
 river_settings = config.river_settings;
 mf6_parameters = config.mf6_parameters;
-pre_dam_outlet_width_m = config.pre_dam_outlet_width_m;
 post_dam_weir_width_m = config.post_dam_weir_width_m;
 dam_settings = config.dam_settings;
-post_dam = config.post_dam;
 forcing_mode = config.forcing_mode;
 forcing_mode = string(forcing_mode);
 forcing_controls = config.forcing_controls;
@@ -74,9 +71,8 @@ assert(lakebed_thickness_m > 0 && lakebed_vertical_k_m_per_day > 0 && ...
     "Lakebed and groundwater-boundary parameters must be positive.");
 assert(any(groundwater_boundary_mode == ["drain", "constant_ghb"]), "Unknown groundwater boundary mode.");
 assert(all(isfinite([drain_elevation_above_outlet_bed_m, constant_ghb_head_above_outlet_bed_m, ...
-    external_outlet_height_above_bed_m, initial_river_depth_above_outlet_bed_m])) && ...
-    external_outlet_height_above_bed_m >= 0 && initial_river_depth_above_outlet_bed_m > 0, ...
-    "Boundary levels must be finite; surface outlet height nonnegative and initial depth positive.");
+    external_outlet_height_above_bed_m])) && external_outlet_height_above_bed_m >= 0, ...
+    "Boundary levels must be finite; surface outlet height must be nonnegative.");
 assert(all([mf6_parameters.fall_average_spinup_years, mf6_parameters.monthly_spinup_years, ...
     mf6_parameters.weekly_spinup_years] >= 0) && ...
     all(mod([mf6_parameters.fall_average_spinup_years, mf6_parameters.monthly_spinup_years, ...
@@ -114,14 +110,8 @@ assert(isscalar(channel_longitudinal_slope) && isfinite(channel_longitudinal_slo
     "Geometry longitudinal slopes must be finite scalars with matching directions.");
 mf6_parameters.initial_head_regional_slope_m_per_m = regional_longitudinal_slope;
 X = input_geometry.X; Y = input_geometry.Y; dx = input_geometry.dx; dy = input_geometry.dy;
-if isfield(input_geometry, "ZTop")
-    ZTop = input_geometry.ZTop;
-elseif isfield(input_geometry, "Z")
-    ZTop = squeeze(input_geometry.Z(:,:,end));
-    fprintf("NOTE: Extracted ZTop from legacy Z; existing interfaces were intentionally ignored.\n");
-else
-    error("Geometry must contain ZTop (or legacy Z).");
-end
+assert(isfield(input_geometry,"ZTop"),"Geometry must contain ZTop.");
+ZTop = input_geometry.ZTop;
 [nx, ny] = size(ZTop);
 assert(isfield(input_geometry,"post_dam") && isfield(input_geometry,"dam_settings"), ...
     "Geometry database is missing dam settings.");
@@ -187,7 +177,6 @@ domain_length_m = domainLength(X, Y, longitudinal_direction);
 boundary_resistance_length_m = groundwater_boundary_resistance_in_domain_lengths * domain_length_m;
 downstream_local_bed_elevation_m = downstreamChannelBedElevation(ZTop, longitudinal_direction);
 external_outlet_invert_m = downstream_local_bed_elevation_m + external_outlet_height_above_bed_m;
-initial_river_stage_m = downstream_local_bed_elevation_m + initial_river_depth_above_outlet_bed_m;
 if groundwater_boundary_mode == "drain"
     groundwater_level_m = downstream_local_bed_elevation_m + drain_elevation_above_outlet_bed_m;
     boundary_mode_code = 0;
@@ -201,7 +190,13 @@ end
     groundwater_boundary_k_m_per_day, boundary_resistance_length_m, groundwater_level_m, ...
     forcing_time_days, longitudinal_direction);
 boundary_definition = struct();
-boundary_definition.upstream_and_lateral = "NOFLOW";
+boundary_definition.upstream_and_lateral = "SPECIFIED_FLUX_BOTTOM_LAYER";
+boundary_definition.groundwater_edge_flux = config.groundwater_edge_flux;
+for edge = ["x_min", "x_max", "y_max"]
+    value = config.groundwater_edge_flux.(edge+"_m3_per_day");
+    assert(isnumeric(value) && isscalar(value) && isfinite(value), ...
+        "Groundwater edge flux must be a finite scalar total in m3/day.");
+end
 boundary_definition.downstream = groundwater_boundary_mode;
 boundary_definition.mode_code = boundary_mode_code;
 boundary_definition.downstream_groundwater_mask = groundwater_mask;
@@ -222,74 +217,47 @@ for scenario_name = ["pre_dam", "post_dam"]
         "channel_mask", "calendar", "forcing", "local_outlet", "boundary_conditions"];
     scenario.treatment_only_input_names = strings(0,1);
 
+% The river builder replaces this template's footprint, stage and storage.
+river_template = struct("name","river", "lake_id",1, ...
+    "initial_stage_m",0, "footprint_mask",false(nx,ny), ...
+    "lakebed_thickness_m",lakebed_thickness_m, ...
+    "lakebed_vertical_k_m_per_day",lakebed_vertical_k_m_per_day, ...
+    "stage_area_volume",table());
+outlet_controls = struct("width_m",post_dam_weir_width_m, ...
+    "invert_elevation_m",external_outlet_invert_m);
 if scenario_name == "pre_dam"
-    % The control is a single connected channel LAK.  Its initial level is the
-    % explicitly initialized from the modeled outlet terrain; stage then evolves freely.
-    control_stage_m = initial_river_stage_m;
-    pre_dam_mask = largestConnectedComponent(channel_mask);
-    assert(any(pre_dam_mask, "all"), "The channel mask contains no connected pre-dam lake cells.");
-    lakes = makeLakeDefinition("pre_dam_river", 1, pre_dam_mask, control_stage_m, ...
-        ZTop, Z, dx, dy, lakebed_thickness_m, lakebed_vertical_k_m_per_day, []);
-    outlets = table("pre_dam_river", "external", external_outlet_invert_m, pre_dam_outlet_width_m, ...
-        "pre_dam_external_weir", VariableNames=["provider_lake", "receiver", ...
-        "invert_elevation_m", "width_m", "role"]);
+    lakes = river_template;
     dam = emptyDamDefinition();
     BDA_LEAKAGE_FOOTPRINT = false(nx, ny);
     BDA_LEAKAGE_MASK = false(nx, ny, nz);
-    lake_masks = struct("pre_dam_river", pre_dam_mask);
 else
     dam = reference_dam;
-    upstream_mask = upstream_zone_mask;
-    upstream_lake_mask = connectedPondMask(ZTop, upstream_mask, dam_distance, dx, dy, dam.initial_stage_m);
-    downstream_candidates = channel_mask & ~upstream_mask & ~dam.grid_mask;
-    downstream_lake_mask = downstreamConnectedComponent(downstream_candidates, ZTop, longitudinal_direction);
-    assert(any(upstream_lake_mask, "all"), "Post-dam initial stage creates no upstream connected lake cells.");
-    assert(any(downstream_lake_mask, "all"), "Post-dam downstream lake mask is empty.");
-    assert(~any(downstream_lake_mask & upstream_mask, "all"), ...
-        "Downstream LAK contains cells on the upstream dam side.");
-    assert(touchesDownstreamEdge(downstream_lake_mask, ZTop, longitudinal_direction), ...
-        "Post-dam downstream lake is not connected to the downstream domain edge.");
-    [stage_area_volume, stage_masks, maximum_lake_mask] = makeStageAreaVolume(ZTop, upstream_mask, dam_distance, dx, dy, dam);
-    assert(~any(maximum_lake_mask & ~upstream_mask, "all"), ...
-        "Upstream LAK contains cells on the downstream dam side.");
-    assert(~any(maximum_lake_mask & downstream_lake_mask, "all"), ...
-        "Maximum upstream and downstream LAK footprints overlap.");
-    assert(any(ZTop(maximum_lake_mask) <= dam.initial_stage_m), ...
-        "Upstream LAK has no cells wetted at its initial stage.");
-    downstream_initial_stage = initial_river_stage_m;
-    assert(any(ZTop(downstream_lake_mask) <= downstream_initial_stage), ...
-        "Downstream LAK has no cells wetted at its initial stage.");
-    upstream_lake = makeLakeDefinition("upstream_impoundment", 1, maximum_lake_mask, ...
-        dam.initial_stage_m, ZTop, Z, dx, dy, lakebed_thickness_m, lakebed_vertical_k_m_per_day, stage_area_volume);
-    downstream_lake = makeLakeDefinition("downstream_river", 2, downstream_lake_mask, ...
-        downstream_initial_stage, ZTop, Z, dx, dy, ...
-        lakebed_thickness_m, lakebed_vertical_k_m_per_day, []);
-    lakes = [upstream_lake, downstream_lake];
-    outlets = table(["upstream_impoundment"; "downstream_river"], ...
-        ["downstream_river"; "external"], [dam.crest_elevation_m; external_outlet_invert_m], ...
-        [post_dam_weir_width_m; pre_dam_outlet_width_m], ...
-        ["post_dam_lak_weir_transfer"; "post_dam_external_outlet"], ...
-        VariableNames=["provider_lake", "receiver", "invert_elevation_m", "width_m", "role"]);
+    [stage_area_volume, maximum_lake_mask] = makeStageAreaVolume( ...
+        ZTop, upstream_zone_mask, dam_distance, dx, dy, dam);
+    assert(any(maximum_lake_mask,"all") && ...
+        ~any(maximum_lake_mask & ~upstream_zone_mask,"all"), ...
+        "Upstream storage footprint must be nonempty and upstream of the dam.");
+    pond = river_template;
+    pond.name = "upstream_impoundment";
+    pond.footprint_mask = maximum_lake_mask;
+    pond.initial_stage_m = dam.initial_stage_m;
+    pond.stage_area_volume = stage_area_volume;
+    lakes = [pond, river_template];
     BDA_LEAKAGE_FOOTPRINT = channel_mask & dam_distance <= dam.leakage_half_width_cells * max(dx, dy);
     BDA_LEAKAGE_MASK = false(nx, ny, nz);
     top_native_layers = nz:-1:(nz - dam.leakage_n_top_layers + 1);
     BDA_LEAKAGE_MASK(:,:,top_native_layers) = repmat(BDA_LEAKAGE_FOOTPRINT, 1, 1, numel(top_native_layers));
     K(BDA_LEAKAGE_MASK) = K_background(BDA_LEAKAGE_MASK) * dam.k_multiplier;
     K33(BDA_LEAKAGE_MASK) = K33_background(BDA_LEAKAGE_MASK) * dam.k33_multiplier;
-    assert(any(K(BDA_LEAKAGE_MASK) ~= K_background(BDA_LEAKAGE_MASK) | ...
-        K33(BDA_LEAKAGE_MASK) ~= K33_background(BDA_LEAKAGE_MASK)), ...
-        "Post-dam BDA hydraulic-property multipliers do not change any cells.");
     assert(all(K(~BDA_LEAKAGE_MASK) == K_background(~BDA_LEAKAGE_MASK), "all") && ...
         all(K33(~BDA_LEAKAGE_MASK) == K33_background(~BDA_LEAKAGE_MASK), "all"), ...
         "Post-dam hydraulic-property changes extend outside the BDA mask.");
-    lake_masks = struct("upstream_impoundment_initial", upstream_lake_mask, "upstream_impoundment_maximum", maximum_lake_mask, ...
-        "downstream_river", downstream_lake_mask, "upstream_stage_masks", stage_masks);
     scenario.treatment_only_input_names = ["post_dam lake geometry and routing", ...
         "BDA leakage-zone K and K33"];
 end
 
 [lakes,outlets,storage_atmosphere_mask,river_configuration] = makeCoarseRiverScenario( ...
-    scenario_name,lakes,outlets,ZTop,Z,X,Y,dx,dy,input_geometry,reference_dam,upstream_zone_mask,channel_mask,river_settings);
+    scenario_name,lakes,outlet_controls,ZTop,Z,Y,dx,dy,input_geometry,reference_dam,upstream_zone_mask,channel_mask,river_settings);
 all_lake_mask = false(nx, ny);
 lake_connection_count = zeros(nx, ny);
 for i_lake = 1:numel(lakes)
@@ -322,8 +290,8 @@ preparation = struct();
 preparation.metadata = struct("scenario", scenario_name, "units", "meters and days", ...
     "native_array_order", "[x,y,layer], top layer is nz", ...
     "floPy_export_status", "written_by_this_script");
-preparation.parameters = struct("scenario", scenario, "post_dam", post_dam, "dam_settings", dam_settings, "mf6_parameters", mf6_parameters, ...
-    "calendar", calendar, "forcing", forcing, "boundary_definition", boundary_definition);
+preparation.parameters = struct("scenario", scenario, "mf6_parameters", mf6_parameters, ...
+    "calendar", calendar, "forcing", forcing);
 preparation.grid = struct();
 preparation.grid.X = X; preparation.grid.Y = Y; preparation.grid.dx_m = dx; preparation.grid.dy_m = dy;
 preparation.grid.ZTop = ZTop; preparation.grid.ZBot = ZBot; preparation.grid.Z = Z; preparation.grid.ZCell = ZCell;
@@ -335,7 +303,7 @@ preparation.properties.Porosity = Porosity;
 preparation.properties.BDA_LEAKAGE_FOOTPRINT = BDA_LEAKAGE_FOOTPRINT;
 preparation.properties.BDA_LEAKAGE_MASK = BDA_LEAKAGE_MASK;
 preparation.surface_water = struct();
-preparation.surface_water.channel_mask = channel_mask; preparation.surface_water.lake_masks = lake_masks;
+preparation.surface_water.channel_mask = channel_mask;
 preparation.surface_water.coarse_river = river_configuration;
 preparation.surface_water.lakes = lakes; preparation.surface_water.outlets = outlets; preparation.surface_water.dam = dam;
 preparation.validation_zones = struct("upstream_mask", upstream_zone_mask, ...
@@ -344,7 +312,6 @@ preparation.validation_zones = struct("upstream_mask", upstream_zone_mask, ...
 preparation.uzf = uzf;
 preparation.boundaries = boundary_definition;
 preparation.monitoring = monitoring;
-preparation.observation_targets = makeObservationTargets(scenario_name, lakes, outlets);
 
 %% 7. Review figures and write this scenario handoff
 if show_figures
@@ -564,8 +531,8 @@ function dam = makeDamDefinition(p, settings, X, Y, ZTop, dx, dy, nz)
     p1 = p.dam_endpoints_xy(1,:); p2 = p.dam_endpoints_xy(2,:); vector = p2-p1; length_m = hypot(vector(1),vector(2));
     assert(length_m > 0 && all(p.dam_endpoints_xy(:,1) >= min(X(:)) & p.dam_endpoints_xy(:,1) <= max(X(:)) & ...
         p.dam_endpoints_xy(:,2) >= min(Y(:)) & p.dam_endpoints_xy(:,2) <= max(Y(:))), "Dam endpoints must be distinct and within the domain.");
-    assert(any(settings.upstream_side == ["left", "right"]) && p.initial_depth_above_dam_toe_m >= 0 && settings.crest_height_above_dam_toe_m > 0 && ...
-        p.initial_depth_above_dam_toe_m <= settings.crest_height_above_dam_toe_m && settings.leakage_half_width_cells >= 0 && ...
+    assert(any(settings.upstream_side == ["left", "right"]) && settings.crest_height_above_dam_toe_m > 0 && ...
+        settings.leakage_half_width_cells >= 0 && ...
         settings.leakage_n_top_layers >= 1 && settings.leakage_n_top_layers <= nz && settings.k_multiplier > 0 && settings.k33_multiplier > 0, "Invalid post-dam parameter.");
     spacing = settings.dam_line_sample_spacing_m; if isempty(spacing), spacing = min(dx,dy)/4; end
     assert(isfinite(spacing) && spacing > 0 && settings.stage_table_rows >= 3 && ...
@@ -576,7 +543,7 @@ function dam = makeDamDefinition(p, settings, X, Y, ZTop, dx, dy, nz)
     dam = struct();
     dam.endpoint_1_xy=p1; dam.endpoint_2_xy=p2; dam.upstream_side=settings.upstream_side; dam.length_m=length_m;
     dam.line_xy=line; dam.line_ground_elevation_m=zline; dam.toe_xy=line(ind,:); dam.toe_elevation_m=toe;
-    dam.crest_elevation_m=toe+settings.crest_height_above_dam_toe_m; dam.initial_stage_m=toe+p.initial_depth_above_dam_toe_m;
+    dam.crest_elevation_m=toe+settings.crest_height_above_dam_toe_m; dam.initial_stage_m=toe+min(1,settings.crest_height_above_dam_toe_m);
     dam.leakage_half_width_cells=settings.leakage_half_width_cells; dam.leakage_n_top_layers=settings.leakage_n_top_layers;
     dam.k_multiplier=settings.k_multiplier; dam.k33_multiplier=settings.k33_multiplier; dam.stage_table_rows=settings.stage_table_rows;
     dam.max_lake_extent_height_above_weir_m=settings.max_lake_extent_height_above_weir_m;
@@ -597,7 +564,7 @@ function [upstream, distance] = damSideMask(X,Y,p1,p2,side)
     distance=pointToSegmentDistance(X,Y,p1,p2);
 end
 
-function [curve,masks,maximum_mask] = makeStageAreaVolume(ZTop, upstream, distance, dx, dy, dam)
+function [curve,maximum_mask] = makeStageAreaVolume(ZTop, upstream, distance, dx, dy, dam)
     % The connected DEM pond is authoritative through the user-selected maximum
     % extent.  Above that stage, the LAK table retains the capped area and
     % adds volume linearly, preventing accidental expansion to the domain edge.
@@ -620,16 +587,6 @@ function [curve,masks,maximum_mask] = makeStageAreaVolume(ZTop, upstream, distan
         "Lake table must have increasing stage/volume and constant capped area.");
     curve=table(stage,stage-dam.toe_elevation_m,area,volume,count,edge,stage>dam.maximum_lake_extent_stage_m, ...
         VariableNames=["stage_elevation_m","stage_above_toe_m","area_m2","volume_m3","cell_count","touches_domain_edge","above_maximum_extent"]);
-end
-
-function lake = makeLakeDefinition(name,id,mask,stage,ZTop,Z,dx,dy,lakebed_thickness,lakebed_k,table_curve)
-    nz=size(Z,3)-1; layer1=nz; [ii,jj]=find(mask); n=numel(ii); assert(n>0, "Lake footprint must contain cells.");
-    connection_area=dx*dy*ones(n,1); conductance=lakebed_k*(connection_area)/(lakebed_thickness);
-    lake=struct(); lake.name=name; lake.lake_id=id; lake.footprint_mask=mask; lake.initial_stage_m=stage;
-    lake.connection_layer_native=layer1*ones(n,1); lake.connection_i_x=ii; lake.connection_i_y=jj;
-    lake.lakebed_thickness_m=lakebed_thickness; lake.lakebed_vertical_k_m_per_day=lakebed_k;
-    lake.vertical_connection_area_m2=connection_area; lake.vertical_connection_conductance_m2_per_day=conductance;
-    lake.stage_area_volume=table_curve; lake.land_elevation_m=ZTop(mask);
 end
 
 function uzf=makeUzfEligibility(lake_mask,nz)
@@ -708,14 +665,6 @@ function monitoring = makeHeadMonitoring(points, names, X, Y, nz)
     monitoring.layer_convention="positive layers are top-down; layer 0 selects the bottom layer";
 end
 
-function targets=makeObservationTargets(scenario,lakes,outlets)
-    lake_names=string({lakes.name})'; targets=table([lake_names; "groundwater"; "boundary"], ...
-        [repmat("stage_storage_lak_gwf_exchange",numel(lakes),1); "heads_bda_cross_section"; "groundwater_boundary_flow_budget"], ...
-        VariableNames=["feature","required_output"]);
-    for q=1:size(outlets, 1), targets=[targets; {outlets.role(q), "outlet_or_transfer_flow"}]; end %#ok<AGROW>
-    if scenario=="post_dam", targets=[targets; {"bda_leakage_zone", "cross_section_groundwater_flow"}]; end %#ok<AGROW>
-end
-
 function makeReviewFigures(X,Y,ZTop,channel,lakes,dam,leakage,ghb,uzf,monitoring,scenario)
     figure("Color","w","Name","BDA preparation review","Units","inches","Position",[1 1 13 8]); tiledlayout(2,2,"TileSpacing","compact");
     nexttile; imagesc(X(:,1),Y(1,:),ZTop'); axis image xy; hold on; contour(X,Y,channel,[.5 .5],"c","LineWidth",1.5);
@@ -784,7 +733,7 @@ function printReviewSummary(prep,calendar)
         prep.parameters.mf6_parameters.initial_head_channel_offset_m);
     if prep.metadata.scenario=="post_dam"
         d=prep.surface_water.dam; fprintf("  Dam endpoints: (%.3f, %.3f) to (%.3f, %.3f) m\n",d.endpoint_1_xy,d.endpoint_2_xy);
-        fprintf("  Toe %.3f m; initial stage %.3f m; crest %.3f m\n",d.toe_elevation_m,d.initial_stage_m,d.crest_elevation_m);
+        fprintf("  Toe %.3f m; preparation seed stage %.3f m; crest %.3f m\n",d.toe_elevation_m,d.initial_stage_m,d.crest_elevation_m);
         fprintf("  Effective BDA leakage cells: %d\n",nnz(prep.properties.BDA_LEAKAGE_MASK));
     end
     fprintf("  FloPy handoff: exported after this review summary.\n\n");
@@ -798,34 +747,6 @@ end
 function mask=connectedPondMask(land,upstream,distance,dx,dy,stage)
     candidate=upstream & land<=stage; seed=candidate & distance<=max(dx,dy); if ~any(seed,"all") && any(candidate,"all"), idx=find(candidate); [~,q]=min(distance(idx)); seed(idx(q))=true; end
     mask=floodFill4(candidate,seed);
-end
-
-function mask=largestConnectedComponent(candidate)
-    remaining=candidate; mask=false(size(candidate)); best=0;
-    while any(remaining,"all")
-        seed=false(size(candidate)); seed(find(remaining,1,"first"))=true; component=floodFill4(remaining,seed);
-        if nnz(component)>best, mask=component; best=nnz(component); end
-        remaining(component)=false;
-    end
-end
-
-function mask=downstreamConnectedComponent(candidate,ZTop,direction)
-    seed=false(size(candidate));
-    if direction=="y"
-        if mean(ZTop(:,1),"all") <= mean(ZTop(:,end),"all"), seed(:,1)=candidate(:,1); else, seed(:,end)=candidate(:,end); end
-    else
-        if mean(ZTop(1,:),"all") <= mean(ZTop(end,:),"all"), seed(1,:)=candidate(1,:); else, seed(end,:)=candidate(end,:); end
-    end
-    assert(any(seed,"all"), "The shared channel does not reach the downstream domain edge.");
-    mask=floodFill4(candidate,seed);
-end
-
-function touch=touchesDownstreamEdge(mask,ZTop,direction)
-    if direction=="y"
-        if mean(ZTop(:,1),"all") <= mean(ZTop(:,end),"all"), touch=any(mask(:,1),"all"); else, touch=any(mask(:,end),"all"); end
-    else
-        if mean(ZTop(1,:),"all") <= mean(ZTop(end,:),"all"), touch=any(mask(1,:),"all"); else, touch=any(mask(end,:),"all"); end
-    end
 end
 
 function mask=floodFill4(candidate,seed)

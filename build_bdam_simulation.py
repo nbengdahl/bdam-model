@@ -26,7 +26,7 @@ import h5py
 import numpy as np
 import flopy
 
-SCHEMA = "bdam-preparation-hdf5-v6"
+SCHEMA = "bdam-preparation-hdf5-v7"
 REQUIRED_BINARY_OUTPUTS = (
     "bdam.hds", "bdam.cbc", "bdam.lak.stage", "bdam.lak.bud",
     "bdam.uzf.wc", "bdam.uzf.bud",
@@ -34,6 +34,8 @@ REQUIRED_BINARY_OUTPUTS = (
 MONITORING_OUTPUTS = (
     "bdam.heads.csv", "bdam.lake_fluxes.csv", "bdam.groundwater_boundary_flux.csv",
 )
+EDGE_NAMES = ("x_min", "x_max", "y_max")
+EDGE_FLUX_OUTPUT = "bdam.specified_groundwater_flux.csv"
 FLUX_OUTPUT = "bdam.fluxes.csv"
 SOLVER_OUTER_OUTPUT = "bdam.solver.outer.csv"
 SOLVER_INNER_OUTPUT = "bdam.solver.inner.csv"
@@ -377,7 +379,7 @@ def load_handoff(h5_path: Path) -> Handoff:
             manifest["coarse_river"] = {key: float(np.asarray(value["data"]).ravel()[0])
                                                     for key, value in h5[group].items()}
     if manifest.get("schema_version") != SCHEMA:
-        raise ValueError(f"Unsupported handoff schema: {manifest.get('schema_version')!r}. Regenerate geometry and paired inputs with the current MakeGrid.m and MakeInputs.m; legacy remote-stage boundary assumptions are not migrated silently.")
+        raise ValueError(f"Unsupported handoff schema: {manifest.get('schema_version')!r}. Regenerate paired inputs with the current MakeInputs.m; legacy remote-stage boundary assumptions are not migrated silently.")
     if manifest.get("units") != "meters and days":
         raise ValueError("FloPy conversion requires the verified meters-and-days handoff.")
     return Handoff(h5_path, manifest)
@@ -406,6 +408,8 @@ def _mf6_executable() -> Path:
 
 
 def _required(h: Handoff) -> None:
+    for edge in EDGE_NAMES:
+        h.array(f"/boundaries/edge_flux/{edge}_m3_per_day")
     for path in (
         "/grid/X", "/grid/Y", "/grid/ZTop", "/grid/Z", "/properties/K", "/properties/K33",
         "/properties/K_background", "/properties/K33_background", "/properties/Porosity", "/calendar/perlen_days",
@@ -496,12 +500,59 @@ def _build_groundwater_boundary(gwf, handoff: Handoff, time: np.ndarray,
             "One stage per LAK feature; the pre-dam river is a lumped lake, not a routed sloping stream."),
         "external_surface_outlet_type": "MANNING" if "coarse_river" in handoff.manifest else "WEIR",
         "atmospheric_partition": "Full storage footprints excluded from surface UZF; groundwater connection masks may be narrower; dry storage footprints lack land atmospheric treatment.",
-        "limitations": "Uncalibrated boundary resistance; no external surface backwater. DRN excludes regional groundwater inflow. Test boundary mode, level, resistance and domain extent before interpreting local heads.",
+        "limitations": "Uncalibrated boundary resistance; no external surface backwater. The downstream DRN excludes inflow there; signed prescribed edge fluxes are independent assumptions. Test boundary mode, level, resistance and domain extent before interpreting local heads.",
     }
     (workspace / "boundary_assumptions.json").write_text(json.dumps(audit, indent=2) + "\n")
     print(f"Boundary QA: {mode}; fixed local level {levels.min():.6g}--{levels.max():.6g} m; "
           f"independent free surface outlet {_external_outlet_invert(handoff):.6g} m; "
           "no remote stage series or upstream-flow-derived heads.")
+
+
+def _edge_flux_records(handoff: Handoff) -> dict[str, list[tuple]]:
+    """Allocate signed edge totals along bottom-layer exterior faces, in MF6 order."""
+    nx, ny = handoff.array("/grid/ZTop").shape
+    bottom = handoff.array("/grid/Z").shape[2] - 2
+    cells = {
+        "x_min": [(bottom, row, 0) for row in range(ny)],
+        "x_max": [(bottom, row, nx - 1) for row in range(ny)],
+        "y_max": [(bottom, 0, col) for col in range(nx)],
+    }
+    records = {}
+    for edge in EDGE_NAMES:
+        values = handoff.array(f"/boundaries/edge_flux/{edge}_m3_per_day").ravel()
+        if values.size != 1 or not np.isfinite(values[0]):
+            raise ValueError(f"{edge} groundwater edge total must be a finite scalar.")
+        total = float(values[0])
+        records[edge] = [(cell, total / len(cells[edge]), edge) for cell in cells[edge]]
+    return records
+
+
+def _build_edge_fluxes(gwf, handoff: Handoff, workspace: Path) -> None:
+    records = _edge_flux_records(handoff)
+    for edge, data in records.items():
+        # No AUTO_FLOW_REDUCE: prescribed extraction is never silently reduced.
+        flopy.mf6.ModflowGwfwel(gwf, pname=f"WEL_{edge.upper()}",
+            filename=f"bdam.{edge}.wel", maxbound=len(data),
+            stress_period_data={0: data}, boundnames=True, save_flows=True)
+    audit_path = workspace / "boundary_assumptions.json"
+    audit = json.loads(audit_path.read_text())
+    audit["specified_edge_fluxes"] = {
+        edge: {"mf6_package": f"WEL_{edge.upper()}",
+               "total_m3_per_day": handoff.scalar(f"/boundaries/edge_flux/{edge}_m3_per_day"),
+               "cell_count": len(data), "mf6_layer_zero_based": data[0][0][0],
+               "allocation": "uniform along edge length", "positive": "into domain",
+               "automatic_flow_reduction": False}
+        for edge, data in records.items()}
+    audit_path.write_text(json.dumps(audit, indent=2) + "\n")
+
+
+def _edge_budget_rates(budget, time: float) -> dict[str, float]:
+    """Read each package separately so opposing corner fluxes never cancel early."""
+    result = {}
+    for edge in EDGE_NAMES:
+        inflow, outflow = _gross_budget_flows(budget, "WEL", time, f"WEL_{edge.upper()}")
+        result[edge] = inflow - outflow
+    return result
 
 
 def _groundwater_boundary_budget_term(budget) -> str:
@@ -513,9 +564,9 @@ def _groundwater_boundary_budget_term(budget) -> str:
     return active.pop()
 
 
-def _gross_budget_flows(budget, term: str, time: float) -> tuple[float, float]:
+def _gross_budget_flows(budget, term: str, time: float, package: str | None = None) -> tuple[float, float]:
     """Sum inflow and outflow by cell sign before netting any records."""
-    records = budget.get_data(text=term, totim=time)
+    records = budget.get_data(text=term, totim=time, **({"paknam2": package} if package else {}))
     if not records:
         raise RuntimeError(f"Missing {term} boundary budget at time {time}.")
     inflow = outflow = 0.0
@@ -627,6 +678,7 @@ def _monitoring(h: Handoff, nlay: int, nrow: int, ncol: int, workspace: Path) ->
         "- Positive/negative signs are MF6's native conventions. `outletN_flow` refers to native outlet N; the final outlet is external. In the coarse post-dam model, outlet 1 is the dam crest transfer. Native lake/outlet IDs are phase-dependent.\n"
         "- `bdam.groundwater_boundary_flux.csv` reports signed net downstream groundwater-boundary exchange; boundary_assumptions.json records DRN or constant GHB, levels, conductance and independent surface outlet.\n"
         "- `bdam.fluxes.csv` contains coupled external inflow/outflow, atmospheric components, combined storage change, coupled residual, the separately named GWF listing totals, signed lake-to-groundwater exchange, and signed groundwater flow across the reference dam line at every saved step. Rates are m3/day and interval volumes are m3.\n"
+        "- `bdam.specified_groundwater_flux.csv` reports realized signed bottom-layer edge totals and interval volumes (x_min, x_max, y_max), supplied through separate WEL packages with no automatic flow reduction. Positive is into the domain.\n"
         "- Coupled inputs are land infiltration, lake precipitation, upstream surface inflow, and gross groundwater-boundary inflow. Outputs are land ET, rejected infiltration, lake evaporation, external surface outflow/withdrawal, and gross groundwater-boundary outflow. Opposing cell flows are summed separately before aggregation. Internal LAK--GWF and LAK-to-LAK flow and storage terms are excluded from external totals.\n"
         "- `net_atmospheric_recharge` is infiltration plus lake precipitation minus land ET and lake evaporation. Positive `combined_storage_change` means increasing GWF+UZF+LAK storage; `coupled_mass_residual` is external net inflow minus storage change.\n"
         "- Positive lake exchange is lake-to-groundwater; negative is groundwater-to-lake. Positive cross-dam flow is upstream-to-downstream. In derived flux summaries, lake1/lake2 aggregate all surface-water exchange upstream/downstream of the reference dam line in both phases. These geographic totals differ from the per-feature native LAK observation IDs. Native lake stage IDs also change at installation as upstream pools merge into the pond.\n"
@@ -941,6 +993,7 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
                                  continuous={"bdam.heads.csv": [(name, "HEAD", cell) for name, cell in head_monitors]})
 
     _build_groundwater_boundary(gwf, h, time, ghb_heads_override, nlay, nrow, ws, save_monitoring)
+    _build_edge_fluxes(gwf, h, ws)
 
     uzf_pd, uzf_period, atmosphere_qa = _uzf_records(h, nlay, nrow, ncol, k33, land_mask, lake_mask, initial_uzf_wc)
     ntrailwaves = _positive_integer(
@@ -968,7 +1021,7 @@ def _execute_mf6(workspace: Path, solver_profile: str = "balanced") -> float:
     """Run one blocking MF6 process and require its explicit success markers."""
     workspace = Path(workspace)
     started = time.perf_counter()
-    from bdam_sweeps import lock_fds
+    from bdam_runtime import lock_fds
     completed = subprocess.run(
         [str(_mf6_executable())], cwd=workspace, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
@@ -1220,6 +1273,8 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
         "lake_precipitation", "lake_evaporation", "net_atmospheric_recharge",
         "surface_inflow", "surface_outflow", "groundwater_boundary_inflow", "groundwater_boundary_outflow",
         "ghb_inflow", "ghb_outflow", "drain_outflow",
+        *[f"specified_{edge}_net" for edge in EDGE_NAMES],
+        "specified_groundwater_inflow", "specified_groundwater_outflow",
         "rejected_infiltration", "lake1_to_groundwater", "lake2_to_groundwater",
         "groundwater_cross_dam_upstream_to_downstream",
     ]
@@ -1273,7 +1328,17 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
         boundary_in, boundary_out = _gross_budget_flows(cbc, boundary_term, time)
         if boundary_term == "DRN" and boundary_in > 1.0e-12:
             raise RuntimeError("Outflow-only DRN unexpectedly reports groundwater inflow.")
+        downstream_out = boundary_out
         ghb_in, ghb_out = (boundary_in, boundary_out) if boundary_term == "GHB" else (0.0, 0.0)
+        edge_rates = _edge_budget_rates(cbc, time)
+        for edge, actual in edge_rates.items():
+            expected = handoff.scalar(f"/boundaries/edge_flux/{edge}_m3_per_day")
+            if not np.isclose(actual, expected, atol=1.0e-10, rtol=1.0e-10):
+                raise RuntimeError(f"Prescribed {edge} flux differs from its total: {actual} != {expected}.")
+        edge_in = sum(max(q, 0.0) for q in edge_rates.values())
+        edge_out = sum(max(-q, 0.0) for q in edge_rates.values())
+        boundary_in += edge_in
+        boundary_out += edge_out
         surface_in = lake_external_in + max(runoff, 0.0) + max(constant, 0.0)
         surface_out = lake_external_out + withdrawal + max(-runoff, 0.0) + max(-constant, 0.0)
         total_in = infiltration + lake_rain + surface_in + boundary_in
@@ -1301,7 +1366,9 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
             "surface_inflow": surface_in, "surface_outflow": surface_out,
             "groundwater_boundary_inflow": boundary_in, "groundwater_boundary_outflow": boundary_out,
             "ghb_inflow": ghb_in, "ghb_outflow": ghb_out,
-            "drain_outflow": boundary_out if boundary_term == "DRN" else 0.0,
+            "drain_outflow": downstream_out if boundary_term == "DRN" else 0.0,
+            **{f"specified_{edge}_net": q for edge, q in edge_rates.items()},
+            "specified_groundwater_inflow": edge_in, "specified_groundwater_outflow": edge_out,
             "rejected_infiltration": rejected,
             "lake1_to_groundwater": lake1, "lake2_to_groundwater": lake2,
             "groundwater_cross_dam_upstream_to_downstream": cross_dam,
@@ -1321,6 +1388,12 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
         rows.append(row)
     with (workspace / FLUX_OUTPUT).open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    edge_fields = ["time", "duration_days", *[f"specified_{edge}_net_m3_per_day" for edge in EDGE_NAMES],
+                   *[f"specified_{edge}_net_m3" for edge in EDGE_NAMES]]
+    with (workspace / EDGE_FLUX_OUTPUT).open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=edge_fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
     qa_path = workspace / "bdam.water_balance.json"
@@ -1354,7 +1427,7 @@ def _write_budget_qa(workspace: Path, discrepancy_tolerance_percent: float = 0.1
     cbc = flopy.utils.CellBudgetFile(workspace / "bdam.cbc", precision="double")
     available = {name.decode().strip() if isinstance(name, bytes) else str(name).strip()
                  for name in cbc.get_unique_record_names()}
-    expected_terms = {_groundwater_boundary_budget_term(cbc), "LAK", "UZF-GWRCH", "STO-SS", "STO-SY"}
+    expected_terms = {_groundwater_boundary_budget_term(cbc), "WEL", "LAK", "UZF-GWRCH", "STO-SS", "STO-SY"}
     missing_terms = sorted(expected_terms - available)
     if missing_terms:
         raise RuntimeError(f"GWF budget is missing required terms: {missing_terms}; found {sorted(available)}")
@@ -1449,16 +1522,6 @@ def _read_mf6_array_last(path: Path, expected_shape: tuple[int, ...]) -> np.ndar
     return _read_mf6_array_final(path, expected_shape)[1]
 
 
-def _load_initial_heads(path: str | Path, expected_shape: tuple[int, int, int]) -> np.ndarray:
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(f"Initial-head file does not exist: {path}")
-    heads = flopy.utils.HeadFile(path).get_data()
-    if heads.shape != expected_shape or not np.all(np.isfinite(heads)):
-        raise ValueError(f"Initial-head file {path} does not match the active MF6 grid.")
-    return heads
-
-
 def _read_lake_stage_series(path: Path, count: int) -> list[tuple[float, np.ndarray]]:
     """Read each LAK stage record; MF6 does not index this array format as heads."""
     header = np.dtype([("kstp", "<i4"), ("kper", "<i4"), ("pertim", "<f8"),
@@ -1548,8 +1611,10 @@ def _period_rows(handoff: Handoff, run_workspace: Path, initial_heads: np.ndarra
             row[f"lake{number}_stage_m"] = float(stage)
         boundary_term = _groundwater_boundary_budget_term(cbc)
         boundary_in, boundary_out = _gross_budget_flows(cbc, boundary_term, time)
-        row["groundwater_boundary_net_volume_m3"] = (boundary_in - boundary_out) * row["duration_days"]
-        row["ghb_net_volume_m3"] = row["groundwater_boundary_net_volume_m3"] if boundary_term == "GHB" else 0.0
+        downstream_net = (boundary_in - boundary_out) * row["duration_days"]
+        edge_net = sum(_edge_budget_rates(cbc, time).values()) * row["duration_days"]
+        row["groundwater_boundary_net_volume_m3"] = downstream_net + edge_net
+        row["ghb_net_volume_m3"] = downstream_net if boundary_term == "GHB" else 0.0
         flux = flux_rows[index]
         if not np.isclose(float(flux["time"]), time, atol=1.0e-8, rtol=0.0) or not np.isclose(
                 float(flux["duration_days"]), row["duration_days"], atol=1.0e-8, rtol=0.0):
@@ -1700,6 +1765,15 @@ def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_fi
             not np.isclose(boundary_audit.get("external_surface_outlet_invert_m", np.nan),
                            _external_outlet_invert(handoff), atol=1.0e-12, rtol=0.0)):
         raise RuntimeError("Completed workspace boundary audit does not match its input contract.")
+    for edge, records in _edge_flux_records(handoff).items():
+        item = boundary_audit.get("specified_edge_fluxes", {}).get(edge, {})
+        if (item.get("mf6_package") != f"WEL_{edge.upper()}" or
+                item.get("cell_count") != len(records) or
+                item.get("mf6_layer_zero_based") != records[0][0][0] or
+                item.get("automatic_flow_reduction") is not False or
+                not np.isclose(item.get("total_m3_per_day", np.nan),
+                    handoff.scalar(f"/boundaries/edge_flux/{edge}_m3_per_day"), atol=1.0e-12, rtol=0)):
+            raise RuntimeError(f"Completed workspace {edge} flux audit does not match its input contract.")
     listing = workspace / "mfsim.lst"
     if not listing.is_file() or "Normal termination of simulation." not in listing.read_text(errors="replace"):
         raise RuntimeError(f"Workspace does not contain a normal MF6 termination marker: {workspace}")
@@ -1749,6 +1823,20 @@ def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_fi
         raise RuntimeError("Workspace is missing valid solver statistics.")
     _validate_monitoring_outputs(workspace, expected_final_time, save_monitoring)
     _validate_flux_output(workspace, expected_final_time)
+    with (workspace / EDGE_FLUX_OUTPUT).open(newline="") as stream:
+        edge_rows = list(csv.DictReader(stream))
+    if not edge_rows or not np.isclose(float(edge_rows[-1]["time"]), expected_final_time, atol=1.0e-8):
+        raise RuntimeError("Specified groundwater flux output has incomplete times.")
+    for row in edge_rows:
+        if any(not np.isfinite(float(value)) for value in row.values()):
+            raise RuntimeError("Specified groundwater flux output contains nonfinite values.")
+        for edge in EDGE_NAMES:
+            q = float(row[f"specified_{edge}_net_m3_per_day"])
+            if (not np.isclose(q, handoff.scalar(f"/boundaries/edge_flux/{edge}_m3_per_day"),
+                               atol=1.0e-10, rtol=1.0e-10) or
+                    not np.isclose(float(row[f"specified_{edge}_net_m3"]), q * float(row["duration_days"]),
+                                   atol=1.0e-10, rtol=1.0e-10)):
+                raise RuntimeError(f"Specified {edge} output does not match its input or interval volume.")
 
 
 def _workspace_size_manifest(workspace: Path) -> dict[str, int]:

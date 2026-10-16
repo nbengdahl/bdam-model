@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import csv
 import hashlib
-import itertools
 import json
 import math
 import platform
@@ -17,7 +15,6 @@ import sys
 import time
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 try:
     import fcntl
@@ -27,14 +24,12 @@ except ImportError:  # Windows single-run compatibility; campaign locks use msvc
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-VERSION = "bdam-campaign-v2"
 _LOCK_STATE = threading.local()
 
 
 def lock_fds():
     inherited = [int(fd) for fd in os.environ.get("BDAM_INHERITED_LOCK_FDS", "").split(",") if fd]
     return tuple(inherited + getattr(_LOCK_STATE, "fds", []))
-
 
 
 def read(path):
@@ -59,25 +54,6 @@ def file_hash(path):
         for chunk in iter(lambda: stream.read(1024*1024), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
-def geometry_fingerprint(path):
-    """Hash numerical geometry consumed by preparation, ignoring export timestamps."""
-    import h5py
-    checksum = hashlib.sha256()
-    with h5py.File(path,"r") as stream:
-        def visit(name,obj):
-            if isinstance(obj,h5py.Dataset):
-                data=np.asarray(obj)
-                checksum.update(name.encode()); checksum.update(str(data.shape).encode())
-                checksum.update(data.dtype.str.encode()); checksum.update(data.tobytes())
-        for name in ("X","Y","ZTop","dx","dy","parameters","post_dam","dam_settings"):
-            obj=stream[name]
-            if isinstance(obj,h5py.Group):
-                obj.visititems(lambda child,item: visit(name+"/"+child,item))
-            else:
-                visit(name,obj)
-    return checksum.hexdigest()
 
 
 def runtime_provenance(source):
@@ -167,8 +143,6 @@ def validate(config):
             raise ValueError(f"dam_settings.{name} must be positive.")
     if dam["dam_line_sample_spacing_m"] not in (None,[]) and dam["dam_line_sample_spacing_m"] <= 0:
         raise ValueError("Dam sample spacing must be positive or automatic.")
-    if config["post_dam"]["initial_depth_above_dam_toe_m"] < 0:
-        raise ValueError("Post-dam initial depth must be nonnegative.")
     if config["longitudinal_direction"] not in ("x","y"):
         raise ValueError("longitudinal_direction must be x or y.")
     if config["hydraulic_conductivity_mode"] not in ("constant","by_layer","hydrofacies_points"):
@@ -180,6 +154,10 @@ def validate(config):
     for name in ("drain_elevation_above_outlet_bed_m", "constant_ghb_head_above_outlet_bed_m", "external_outlet_height_above_bed_m"):
         if not math.isfinite(config[name]) or (name == "external_outlet_height_above_bed_m" and config[name] < 0):
             raise ValueError(f"{name} must be finite; surface outlet height must be nonnegative.")
+    for edge in ("x_min", "x_max", "y_max"):
+        value = config["groundwater_edge_flux"][f"{edge}_m3_per_day"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"groundwater_edge_flux.{edge}_m3_per_day must be a finite scalar.")
     river = config["river_settings"]
     integer(river["downstream_segments"], "river_settings.downstream_segments")
     for name, value in river.items():
@@ -442,7 +420,7 @@ def compact(path):
             item.unlink()
 
 
-def run_member(manifest, member, retention="full", reuse_baseline=None):
+def run_member(manifest, member, retention="full"):
     path = Path(member["path"])
     with contextlib.ExitStack() as claims:
         acquired = claims.enter_context(lock(path.parent/"member.lock"))
@@ -456,16 +434,6 @@ def run_member(manifest, member, retention="full", reuse_baseline=None):
                 return dict(id=member["id"], status="pass", resumed=True)
             if waited and (path/"status.json").exists() and read(path/"status.json").get("status") == "failed":
                 return read(path/"status.json")
-            if reuse_baseline and member["baseline"]:
-                reuse = Path(reuse_baseline).resolve()
-                if not complete(reuse, member["fingerprint"]):
-                    raise ValueError("Baseline reuse requires matching provenance and validated completion.")
-                if (path/"Runs").exists():
-                    raise ValueError("Baseline destination already has outputs; choose a fresh campaign.")
-                shutil.copytree(reuse/"Runs", path/"Runs")
-                write(path/"completion.json", read(reuse/"completion.json"))
-                write(path/"status.json", dict(id=member["id"], status="pass", reused_from=str(reuse)))
-                return dict(id=member["id"], status="pass", reused=True)
             prepared = read(path/"prepared.json")
             if prepared["fingerprint"] != member["fingerprint"]:
                 raise ValueError("Prepared handoffs do not match member provenance.")
@@ -504,3 +472,11 @@ def run_member(manifest, member, retention="full", reuse_baseline=None):
             status = dict(id=member["id"], status="failed", error=str(exc))
             write(path/"status.json", status)
             return status
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Internal preparation receipt writer.")
+    parser.add_argument("command", choices=("mark-prepared",))
+    parser.add_argument("path", type=Path)
+    args = parser.parse_args()
+    mark_prepared(args.path)

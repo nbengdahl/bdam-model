@@ -130,8 +130,8 @@ class LocalBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "preparation_handoff.h5"
             with h5py.File(path, "w") as h5:
-                h5.attrs["schema_version"] = "bdam-preparation-hdf5-v4"
-            with self.assertRaisesRegex(ValueError, "Regenerate geometry and paired inputs"):
+                h5.attrs["schema_version"] = "bdam-preparation-hdf5-v6"
+            with self.assertRaisesRegex(ValueError, "Regenerate paired inputs"):
                 load_handoff(path)
 
 

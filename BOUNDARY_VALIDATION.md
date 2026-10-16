@@ -1,3 +1,8 @@
+> Historical validation record. Configurations, commands and machine-local paths
+> below describe the dated source/run, not current branch defaults. Use
+> [README.md](README.md) for current operation and [CLEANUP_VALIDATION.md](CLEANUP_VALIDATION.md)
+> for the current validation index. Evidence and numerical values are retained.
+
 # Boundary and monthly-spinup validation — 14 October 2026
 
 **Implemented and numerically validated in the main working tree.** Monthly-first spinup is faster, and downstream controls no longer require inferred remote heads or river stages. The comparisons also expose substantial remaining groundwater sensitivity to boundary resistance. The setup cannot be described as artifact-free or field-calibrated.

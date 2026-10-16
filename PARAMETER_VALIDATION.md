@@ -1,3 +1,8 @@
+> Historical implementation validation of registry v3 (October 15, 2026).
+> The v4 cleanup removes inactive controls and obsolete preparation/runtime code.
+> See [CLEANUP_VALIDATION.md](CLEANUP_VALIDATION.md) for the current evidence and
+> [PARAMETERS.md](PARAMETERS.md) for current operations. Original results follow.
+
 # Parameter-table implementation validation
 
 Validated 2026-10-15 on `parameters-table`, based on `parameter-sweeps` commit

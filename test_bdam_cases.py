@@ -1,6 +1,5 @@
 """Case contract and persistent evaluation tests without MATLAB or MF6."""
 import csv
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +24,15 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(cfg["groundwater_boundary_k_m_per_day"],cfg["K_constant"])
         with self.assertRaises(ValueError): self.resolve({"K_constant":[.01,.02]})
 
+    def test_edge_flux_totals_accept_signed_finite_scalars(self):
+        self.assertEqual(self.resolve()["groundwater_edge_flux"],
+                         dict(x_min_m3_per_day=0, x_max_m3_per_day=0, y_max_m3_per_day=0))
+        self.assertEqual(self.resolve({"groundwater_edge_flux.x_min_m3_per_day": -3})[
+            "groundwater_edge_flux"]["x_min_m3_per_day"], -3)
+        for value in (float("nan"), float("inf"), [1, 2], True, None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.resolve({"groundwater_edge_flux.y_max_m3_per_day": value})
+
     def test_row_defaults_arrays_and_indexed_overrides(self):
         cfg=self.resolve({"n_layers":3,"K_constant":.1,"geometry.bottom_widths_m[1]":3}, {"specific_yield":.15})
         self.assertEqual(cfg["K_by_layer_top_to_bottom"],[.03]*3)
@@ -41,6 +49,20 @@ class ResolutionTests(unittest.TestCase):
                          {"geometry.dam_relative_distance_upstream":1},{"longitudinal_direction":"x"},
                          {"geometry.domain_length_y_m":140.5},{"unknown":1}):
             with self.subTest(override=override),self.assertRaises(ValueError): self.resolve(override)
+
+    def test_removed_intermediate_controls_are_rejected(self):
+        for name in ("initial_river_depth_above_outlet_bed_m", "pre_dam_outlet_width_m",
+                     "post_dam.initial_depth_above_dam_toe_m"):
+            self.assertNotIn(name, SCHEMA["parameters"])
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "Unknown parameter"):
+                self.resolve({name: 1})
+
+    def test_low_dam_and_unchanged_aquifer_treatment_resolve(self):
+        cfg = self.resolve({"geometry.dam_max_m": 0.5,
+                            "dam_settings.k_multiplier": 1, "dam_settings.k33_multiplier": 1})
+        self.assertEqual(cfg["geometry"]["dam_max_m"], 0.5)
+        with self.assertRaisesRegex(ValueError, "must be >"):
+            self.resolve({"geometry.dam_max_m": 0})
 
     def test_segment_counts_one_two_three(self):
         for n in (1,2,3):
@@ -69,6 +91,12 @@ class StudyTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.study=bdam.Study(Path(self.temp.name)/"study",dict(source=str(HERE)))
+
+    def test_execution_defaults_to_one_worker_and_explicit_capacity_is_allowed(self):
+        self.assertEqual(self.study.execution["n_parallel_runs"], 1)
+        larger = bdam.Study(Path(self.temp.name)/"explicit-capacity",
+                            dict(source=str(HERE), execution=dict(n_parallel_runs=6)))
+        self.assertEqual(larger.execution["n_parallel_runs"], 6)
 
     def test_paired_rows_duplicates_and_mixed_failures(self):
         batch=self.study.submit([{"case_id":"a","K_constant":.01,"specific_yield":.1},

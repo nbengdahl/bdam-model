@@ -1,3 +1,8 @@
+> Historical validation record. Configurations, commands and machine-local paths
+> below describe the dated source/run, not current branch defaults. Use
+> [README.md](README.md) for current operation and [CLEANUP_VALIDATION.md](CLEANUP_VALIDATION.md)
+> for the current validation index. Evidence and numerical values are retained.
+
 # v0.2.0 integration validation — 14 October 2026
 
 The parameter-sweep branch now includes main's coarse Manning river pools,

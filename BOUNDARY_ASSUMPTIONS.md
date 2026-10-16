@@ -1,7 +1,9 @@
-# Local downstream boundary contract
+# Groundwater and surface boundary contract
 
-The monthly-first default and boundary sensitivity matrix pass full numerical
-validation; substantial physical sensitivity and representation limits remain.
+The historical monthly-first default and downstream boundary sensitivity matrix
+passed full numerical validation. The prescribed edge-flux addition uses bounded
+short verification; see [EDGE_FLUX_VALIDATION.md](EDGE_FLUX_VALIDATION.md).
+Substantial physical sensitivity and representation limits remain.
 See [BOUNDARY_VALIDATION.md](BOUNDARY_VALIDATION.md) before interpreting results.
 
 The default does not require a head or river-stage observation outside the
@@ -17,30 +19,36 @@ that any boundary is physically correct.
 | Groundwater mode | `groundwater_boundary_mode` | `drain` | Outflow-only DRN; cannot supply groundwater |
 | Drain elevation | Modeled downstream channel bed + `drain_elevation_above_outlet_bed_m` | bed + 0 m | Discharge threshold; simulated heads remain unknowns |
 | Optional constant GHB | Bed + `constant_ghb_head_above_outlet_bed_m` | bed + 0.10 m | Explicit assumed head; active only in `constant_ghb` mode |
-| Boundary conductance | `groundwater_boundary_k_m_per_day * cell_face_area / effective_resistance_length` | background K; resistance = domain length | Uncalibrated lumped resistance, not a remote control position |
+| Boundary conductance | `groundwater_boundary_k_m_per_day * cell_face_area / effective_resistance_length` | automatic K follows `K_constant`; resistance = domain length | Uncalibrated lumped resistance, not a remote control position |
+| Prescribed groundwater edges | `groundwater_edge_flux.{x_min,x_max,y_max}_m3_per_day` | 0 m³/day each | Signed total per bottom-layer edge; positive inflow, negative outflow; uniform allocation via separate WEL packages |
 | External surface outlet | Bed + `external_outlet_height_above_bed_m` | bed + 0 m | Independent Manning discharge control, never a GHB head |
 | Initial river stage | Each pool's lowest bed + 0.10 m | local bed + 0.10 m | Initial condition only; later stages evolve |
 
-All boundaries are located on the low-elevation longitudinal model edge.
-Only cells whose bottoms lie below the selected reference level are eligible.
-All transverse columns must be represented. The constant GHB and DRN levels
+The downstream DRN/GHB and free surface outlet are located on the low-elevation
+longitudinal edge (minimum Y). For DRN/GHB, only cells whose bottoms lie below
+the selected reference level are eligible, and all transverse columns must be
+represented. Prescribed groundwater totals act independently on the bottom-layer
+minimum-X, maximum-X and maximum-Y edges. The constant GHB and DRN levels
 stay fixed through relaxation, spinup and all monitored years; changing
 upstream inflow cannot change them. There is no exported or unused remote
-river-stage series. Handoff v6 stores mode, levels, resistance, conductance and
-independent outlet inverts. Older handoffs require source regeneration.
+river-stage series. Handoff v7 stores mode, levels, resistance, conductance and
+independent outlet inverts, plus the three signed edge totals. Older handoffs
+require fresh preparation with the current source.
 
 ## What remains assumed
 
 - DRN assumes an open groundwater discharge path at the outlet elevation. It
-  excludes regional groundwater import and cannot represent external backwater.
+  excludes groundwater inflow through that downstream drain and cannot represent
+  external backwater. Other edges can independently supply prescribed inflow.
 - The default conductance uses full eligible cell-face areas and an effective
   resistance length of one domain length. This remains a conceptual response
   parameter; it is not an observation of geology beyond the model edge.
 - A Manning outlet at the modeled bed is an effective free-discharge approximation. Its
   width and optional height are still assumptions. It does not route a river
   outside the domain or calculate downstream backwater.
-- Upstream and lateral groundwater edges are no-flow. Regional lateral
-  groundwater supply is therefore excluded and domain extent matters.
+- Upstream and lateral groundwater edges default to zero flux. Three explicit
+  bottom-layer edge totals can prescribe regional import or export; other
+  exterior faces remain no-flow. Domain extent and assumed totals matter.
 - Each coarse LAK pool has one stage. Manning transfers approximate a sloping
   river without receiving-pool backwater feedback. Fixed maximum footprints omit layer-1
   UZF even where the simulated lake is locally dry, as already documented.
@@ -51,26 +59,43 @@ independent outlet inverts. Older handoffs require source regeneration.
 
 These limits must be reported with results. Boundary independence removes
 hidden coupling; it does not remove physical uncertainty or validate a field
-model. External backwater or groundwater import requires a justified
-alternative boundary representation and supporting data or explicit scenarios.
+model. External backwater requires an alternative surface representation. Groundwater
+import requires justified prescribed edge totals or an explicit GHB scenario.
 
 ## Outputs and checks
 
 Every workspace publishes `boundary_assumptions.json` with the active package,
 local level, conductance, resistance, independent outlet and limitations.
-`bdam.groundwater_boundary_flux.csv` is signed net exchange. The derived flux
-and summary tables separately sum positive and negative **cell** rates as
-`groundwater_boundary_inflow` and `groundwater_boundary_outflow`. In DRN mode
-the first must be zero and `drain_outflow` supplies the second; GHB-only columns
-are zero. In GHB mode the GHB-only columns hold gross exchange. Their
-difference is the net boundary rate. All rates have matching interval volumes.
+`bdam.groundwater_boundary_flux.csv` retains signed **downstream-only** exchange.
+`bdam.specified_groundwater_flux.csv` reports realized signed x_min, x_max and
+y_max rates and interval volumes from the three WEL packages. Positive means
+into the domain. `boundary_assumptions.json` records totals, allocation, layer,
+package names and disabled automatic flow reduction.
 
-Surface inflow/outflow, atmospheric terms and combined GWF+UZF+LAK storage are
-reported independently. The coupled residual includes the active DRN or GHB,
-not a netted substitute for gross external totals. The runner rejects mixed
-DRN/GHB budget terms, missing boundary records, changing reference levels,
-invalid conductance and incomplete assumption audits. Required numerical
-closure tolerances and the October–September calendar remain unchanged.
+Derived `groundwater_boundary_inflow` / `groundwater_boundary_outflow` include
+downstream and prescribed edges. Sum gross flows before opposing corner
+contributions cancel. `drain_outflow`, `ghb_inflow`, `ghb_outflow` and
+`ghb_net_volume_m3` remain downstream-only. `specified_*_net` fields identify
+the individual edges; `specified_groundwater_inflow/outflow` give their gross
+totals. All rates have corresponding interval volumes. A DRN cannot supply
+inflow, but combined groundwater inflow can be positive when edges supply water.
+
+Surface, atmospheric and combined GWF+UZF+LAK storage terms remain independent.
+The coupled residual includes both downstream and prescribed edges. The runner
+checks actual per-edge WEL totals against inputs, rejects mixed DRN/GHB terms,
+and retains the strict closure tolerances and production calendar.
+
+## Prescribed edge allocation
+
+`groundwater_edge_flux.{x_min,x_max,y_max}_m3_per_day` specifies total m³/day
+along each edge, default zero. Positive enters; negative leaves. Only bottom-layer
+cells receive flux, distributed uniformly along edge length (equal shares on the
+current uniform grid). Corner cells retain independent contributions from each
+adjoining edge. At minimum-Y corners the downstream DRN/GHB also remains active.
+The totals persist unchanged through every phase and restart. Separate WEL
+packages implement these prescribed boundary terms; no pumping reduction is
+allowed. An infeasible extraction must fail QA rather than silently change Q.
+The inputs are regional exchange assumptions, not calibrated observations.
 
 Native LAK rainfall and evaporation **observations** are volumetric m³/day,
 as are their budget terms. The supplied atmospheric forcing depths are m/day.
@@ -80,7 +105,8 @@ when the outlet changes the wetted footprint.
 
 ## Sensitivity procedure
 
-Use isolated source copies and regenerate geometry and both handoffs. Preserve
+Use explicit case rows and generate fresh geometry and paired handoffs through
+`Study.prepare` / `Study.evaluate`. Preserve
 forcing, aquifer properties, treatment, calendar and solver settings. Compare
 the same pre/post year and point locations; retain all storage changes.
 

@@ -79,7 +79,7 @@ def defaults(schema):
 
 def load_schema(source):
     schema=rt.read(Path(source)/"bdam_parameter_schema.json")
-    if schema.get("version")!="bdam-parameters-v3" or schema.get("defaults")!=defaults(schema):
+    if schema.get("version")!="bdam-parameters-v5" or schema.get("defaults")!=defaults(schema):
         raise ValueError("Unsupported or inconsistent parameter registry; regenerate its MATLAB defaults mirror.")
     return schema
 
@@ -179,8 +179,8 @@ def _validate_geometry(p):
         count = p[f"domain_length_{axis}_m"]/p[f"spacing_{axis}_m"]
         if count < 2 or not math.isclose(count, round(count), rel_tol=1e-10, abs_tol=1e-10):
             raise ValueError(f"Geometry {axis} length must contain an integer number of at least two cells.")
-    if not (0 < p["dam_relative_distance_upstream"] < 1) or p["dam_max_m"] < 0:
-        raise ValueError("Dam must be inside the reach and have nonnegative height.")
+    if not (0 < p["dam_relative_distance_upstream"] < 1) or p["dam_max_m"] <= 0:
+        raise ValueError("Dam must be inside the reach and have positive height.")
     if p["regional_longitudinal_slope"] <= 0 or p["channel_longitudinal_slope"] <= 0:
         raise ValueError("Coarse river currently requires positive slopes toward minimum Y.")
     periods = p["sine_periods"]
@@ -367,7 +367,7 @@ class Study:
                         runtime=numerical,matlab={k:v for k,v in (matlab or {}).items() if k!="executable"},version=VERSION))
                     identity = fingerprint[:24]
                     destination = self.root/"executions"/identity/"BDam"
-                    member = dict(id=identity,fingerprint=fingerprint,path=str(destination),baseline=False)
+                    member = dict(id=identity,fingerprint=fingerprint,path=str(destination))
                     if destination.exists():
                         if rt.read(destination/"provenance.json")["fingerprint"] != fingerprint:
                             raise RuntimeError("Execution identity collision.")

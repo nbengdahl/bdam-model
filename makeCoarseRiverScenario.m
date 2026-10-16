@@ -1,4 +1,4 @@
-function [lakes,outlets,atmosphere_mask,experiment] = makeCoarseRiverScenario(scenario,old_lakes,old_outlets,ZTop,Z,X,Y,dx,dy,geometry,dam,upstream,channel,settings)
+function [lakes,outlets,atmosphere_mask,experiment] = makeCoarseRiverScenario(scenario,lake_templates,outlet_controls,ZTop,Z,Y,dx,dy,geometry,dam,upstream,channel,settings)
 % Coarse pools: full DEM storage, independently selected exchange.
 assert(mean(ZTop(:,1))<mean(ZTop(:,end)), 'Coarse river supports downstream minimum-Y only.');
 mode="pond_narrow"; ndown=settings.downstream_segments;
@@ -20,16 +20,16 @@ send=integral(speed,yedge,yedge+p.domain_length_y_m,'RelTol',1e-10);
 [edges,nup]=bdamRiverPoolEdges(sdam,send,ndown);
 yrow=Y(1,:); srow=arrayfun(@(yy)integral(speed,yedge,yy,'RelTol',1e-10),yrow);
 thalweg=min(ZTop,[],1); relative=ZTop-thalweg;
-atmosphere_mask=false(size(ZTop)); lakes=old_lakes([]);
+atmosphere_mask=false(size(ZTop)); lakes=lake_templates([]);
 provider=strings(0,1); receiver=provider; invert=[]; widths=[]; role=provider;
 cout=[]; rough=[]; slopes=[];
 if scenario=="post_dam"
-    lake=old_lakes(1); storage=lake.footprint_mask;
+    lake=lake_templates(1); storage=lake.footprint_mask;
     exchange=storage & relative<=pond_cut;
     lake=replaceConnections(lake,exchange,ZTop,Z,dx,dy); lake.storage_footprint_mask=storage;
     lakes=lake; atmosphere_mask=storage;
     provider(end+1,1)=lake.name; receiver(end+1,1)="river_1";
-    invert(end+1,1)=dam.crest_elevation_m; widths(end+1,1)=old_outlets.width_m(1);
+    invert(end+1,1)=dam.crest_elevation_m; widths(end+1,1)=outlet_controls.width_m(1);
     role(end+1,1)="dam_crest_weir"; cout(end+1,1)=2; rough(end+1,1)=0; slopes(end+1,1)=0;
     domains=cell(ndown,1);
     % Order pools upstream to downstream. Domain follows existing dam-side mask.
@@ -53,7 +53,7 @@ for k=1:numel(domains)
     storage=floodConnected(domain & ZTop<=cap,channel&domain&ZTop<=cap);
     assert(any(storage,'all'));
     exchange=storage;
-    lake=old_lakes(end); lake.name="river_"+k; lake.lake_id=numel(lakes)+1;
+    lake=lake_templates(end); lake.name="river_"+k; lake.lake_id=numel(lakes)+1;
     lake.initial_stage_m=low+0.10;
     lake=replaceConnections(lake,exchange,ZTop,Z,dx,dy); lake.storage_footprint_mask=storage;
     st=unique([linspace(low-0.01,cap,81)';ZTop(storage)]); a=zeros(size(st));v=a;
@@ -78,7 +78,7 @@ for k=1:numel(domains)
     cout(end+1,1)=1;rough(end+1,1)=nrough;slopes(end+1,1)=abs(p.channel_longitudinal_slope);
 end
 % Preserve the independent external invert from the boundary contract.
-invert(end)=old_outlets.invert_elevation_m(end);
+invert(end)=outlet_controls.invert_elevation_m(end);
 outlets=table(provider,receiver,invert,widths,role,cout,rough,slopes,'VariableNames', ...
     {'provider_lake','receiver','invert_elevation_m','width_m','role','type_code','roughness','slope'});
 if scenario=="post_dam"

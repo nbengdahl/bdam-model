@@ -1,4 +1,34 @@
+# Changelog
+
 ## parameters-table (unreleased)
+
+### Prescribed groundwater edge fluxes — 2026-10-16
+
+Registry v5 / handoff v7 add signed total m³/day inputs on the bottom-layer
+−x, +x and +y edges, all zero by default. Separate WEL packages retain corner
+contributions and disable automatic reduction. Native edge monitoring and
+combined budgets include these terms; downstream DRN/GHB reporting stays local.
+Verification is bounded to four short configurations with at most four workers;
+the ordinary study default remains one. Fresh studies/preparation are required.
+
+### Cleanup — 2026-10-16
+
+- Replace superseded single-/two-lake preparation scaffolding with direct pond
+  and coarse-river templates. Remove unused helpers, test-only legacy baseline
+  import/collection paths, wildcard runtime exports and machine-specific viewer
+  defaults; keep the documented vector-request adapter and active forcing modes.
+- Registry v4 removes ineffective intermediate river width/depth controls and
+  the legacy pond preview-depth field; removed scientific columns are rejected.
+  Keep default numerical handoffs, calendars, solver policy and budgets unchanged.
+- Allow positive sub-meter dams and unity aquifer-conductivity multipliers;
+  distinguish internal preparation seed stages from conservative installation.
+- Rewrite human/agent operating guides around explicit cases and generated
+  geometry, correct units/storage estimates, add a registry-generated parameter
+  reference, and identify historical validation records explicitly.
+- Actual-output viewer tests now use `BDAM_TEST_OUTPUT_ROOT` rather than another
+  user's historical folder; retain the fixture-independent test suite.
+
+### Explicit case interface
 
 - Added persistent explicit-case studies with CSV, MATLAB and Python interfaces,
   successive batches, case-level errors, validated reuse and external design helpers.
@@ -33,8 +63,6 @@
 - Normalize equal numeric scalar representations to avoid duplicate baselines.
 - Validate the complete baseline and a four-worker factorial with exact
   serial/parallel scientific agreement; retain full outputs and measured QA.
-
-# Changelog
 
 ## 0.2.1 — 2026-10-15
 

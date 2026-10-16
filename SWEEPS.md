@@ -1,188 +1,48 @@
-> Deprecated interface: see [PARAMETERS.md](PARAMETERS.md). New studies execute
-> explicit rows. Historical sweep campaigns require their original snapshots.
-> The following text records the previous branch workflow.
+# Deprecated vector-sweep adapter
 
-# Parameter sweeps and sensitivity runs
+New work uses explicit rows through [bdam.Study](PARAMETERS.md). The old MATLAB
+vector expansion workflow and `BDAM_CAMPAIGN_ROOT` / `BDAM_SKIP_BASELINE`
+variables are no longer active. `MakeInputs.m` does not interpret numeric
+vectors as candidate axes.
 
-This branch defaults to 70 x 140 cells at 1 m spacing, five layers, 0 fall-average / 4 monthly / 1 weekly spinup years (no initial seven-day
-relaxation with zero fall-average years), and
-two monitored pre-dam plus two post-dam years. These are starting settings;
-use interannual state changes to assess whether spinup is adequate.
+## Supported compatibility path
 
-The default mean upstream inflow is 8640 m3/day (0.1 m3/s, 100 L/s), matching
-the main branch. It scales the single upstream hydrograph. Both the editable
-setting and the sweep reference registry use this value; when mean inflow is
-swept, the added default reference uses 8640 m3/day. This is an assumed analog
-flow, not a measured Rose Creek calibration. Historical validation receipts
-predate this default change; prepare new campaigns rather than reusing their
-baseline results.
+`bdam_sweeps.py` is retained only to translate an old **request object** into a
+fresh table study. Its `plan` command expands registered numeric scalars,
+deduplicates candidates, and inserts the old default reference. `--skip-baseline`
+removes that reference, including a matching Cartesian combination. These rules
+belong to the adapter; the core table interface never adds/drops cases implicitly.
 
-## Configure and preview
-
-Use a local nonsynchronized checkout and one persistent Python installation
-with `requirements.txt`. Place a local `bin/mf6` in the checkout or an ancestor.
-Edit the user input section in `MakeInputs.m`:
-
-```matlab
-K_constant = [0.01 0.03 0.06];
-specific_yield = [0.10 0.20];
-n_parallel_runs = 2;
-forcing_controls.inflow.width_factor = [0.8 1 1.2];
+```sh
+python3 bdam_sweeps.py plan legacy-request.json /absolute/local/new-study
+python3 bdam_sweeps.py prepare /absolute/local/new-study/batches/grid.json
+python3 bdam_sweeps.py run /absolute/local/new-study/batches/grid.json
+python3 bdam_sweeps.py collect /absolute/local/new-study/batches/grid.json
 ```
 
-This example has 18 Cartesian combinations. The default reference is included
-once if it is among those combinations; otherwise an additional reference is
-added. The reference uses branch defaults for swept fields and supplied scalar
-values for fixed fields. Repeated candidate values are deduplicated.
+The request must contain the complete legacy scientific settings/native arrays
+expected by `expand`, not just a few axes. Inactive fields removed in registry v4
+are not accepted by the new study. The obsolete `source_geometry_file` selection
+is ignored: fresh case geometry comes from registry defaults unless geometry
+parameters are supplied. Legacy requests with removed controls should be rewritten
+as explicit rows rather than silently migrated. For new Cartesian designs, use:
 
-All registered numeric scalar parameters, including nested `mf6_parameters`,
-`dam_settings`, `post_dam` and forcing controls, accept candidate vectors.
-`river_settings` is included; `downstream_segments` must remain 2.
-Monthly climate vectors, layer-property vectors and hydrofacies tables keep
-their array meanings. Strings/paths are fixed inputs. `n_parallel_runs` must
-remain one positive integer. `[]` retains automatic defaults for optional
-centers, dam sample spacing, layer arrays and boundary conductivity. An empty
-`groundwater_boundary_k_m_per_day` inherits each member's `K_constant`; explicit boundary K candidates form
-an independent axis. Empty layer arrays are generated after selecting `n_layers`.
+```python
+from bdam import Study, grid_cases
 
-```zsh
-export BDAM_PYTHON="$(command -v python3)"
-export BDAM_CAMPAIGN_ROOT=/absolute/local/path/my-campaign
-matlab -batch "run('MakeGrid.m')"
-BDAM_PREVIEW=1 matlab -batch "run('MakeInputs.m')"
+study = Study('/absolute/local/new-study')
+rows = grid_cases({'K_constant': [0.01, 0.03], 'specific_yield': [0.1, 0.2]})
+study.submit(rows, 'factorial')  # Exactly four rows; no added reference.
+results = study.evaluate('factorial')
 ```
 
-Preview writes `campaign.json`, resolved configurations and immutable source
-snapshots; it does not prepare HDF5 or launch MF6. All resolved scalar candidates
-are checked first; full geometric/package validation occurs during serial
-preparation, before any simulation starts. Invalid combinations are reported
-with their values and never silently discarded. Choose a new campaign root
-when changing its configuration or source. Existing manifests cannot be replaced
-with different settings.
+The adapter's prepare/run/collect commands accept new `batches/*.json` manifests.
+Frozen old `campaign.json` manifests are rejected with a message to use their
+original source snapshots. Old external-baseline import is no longer part of
+the active runtime; identical validated executions within a study are reused
+through scientific identity and completion receipts.
 
-Optional `BDAM_CONFIG=/absolute/path/overrides.json` overlays the same input
-schema before expansion. For example:
-
-```json
-{
-  "K_constant": [0.01, 0.03],
-  "specific_yield": [0.1, 0.2],
-  "n_parallel_runs": 2,
-  "forcing_controls": {
-    "precipitation": {"shift_days": [-20, 0, 20]}
-  }
-}
-```
-
-To omit the reference, set `BDAM_SKIP_BASELINE=1` when planning with MATLAB,
-or use `bdam_sweeps.py plan request.json ROOT --skip-baseline`. This also removes
-an exact reference combination from the Cartesian product. No baseline result
-is required to skip it. All-scalar settings with the baseline skipped generate
-an empty campaign. Without an explicit campaign root and without sweep axes,
-`MakeInputs.m` retains the usual `ModelInput/pre_dam` and `post_dam` layout.
-
-## Prepare, run and resume
-
-```zsh
-matlab -batch "run('MakeInputs.m')"
-python3 bdam_sweeps.py run "$BDAM_CAMPAIGN_ROOT/campaign.json"
-```
-
-Alternatively, prepare an existing preview with
-`python3 bdam_sweeps.py prepare "$BDAM_CAMPAIGN_ROOT/campaign.json"`.
-Preparation uses one serial MATLAB session and an exclusive campaign lock.
-Each member has its own geometry copy, handoffs, staging, results, cache and
-attempt logs; installed Python dependencies and the local executable are shared.
-
-`n_parallel_runs` bounds active MF6 simulations, including every spinup phase.
-Multiple launchers or agents sharing the same campaign obey the same OS capacity
-locks and member claims. The model CLI also guards its exact output directory.
-Do not bypass the campaign launcher, delete lock files, or edit snapshots.
-On POSIX hosts, solver subprocesses inherit locks so a surviving MF6 process
-continues to own its slot if its launcher exits. Windows uses byte-range locks;
-the cross-process campaign tests are validated on macOS.
-
-Repeat `run` to resume. Matching completed members are revalidated and skipped.
-Prior failed outputs/staging remain under attempt directories. Independent
-members continue after failures; the campaign exits nonzero when any member
-fails. Inspect `members/ID/BDam/status.json` and `attempt-NNN/model_runner.log`;
-live solver progress is in that attempt's staging `bdam.lst`. A quiet member
-may be waiting for a slot.
-
-`--reuse-baseline /path/to/completed/member/BDam` imports a completed reference
-only when source/input/configuration fingerprints and result validation match.
-Scheduling capacity and runtime paths do not change member identity. The
-boundary is local DRN by default and independent of inflow transformations.
-
-## Periodic forcing and interpretation
-
-Each driver (`precipitation`, `et`, `inflow`) has `magnitude_scale=1`,
-`shift_days=0`, `width_factor=1` and `center_day=[]` by default. Positive shifts
-delay the season. Centers are elapsed water-year days: zero is October 1. The
-automatic center is the first maximum in the baseline daily curve.
-
-Nonnegative cyclic Hermite cubics join in both value and first derivative
-across every year boundary. Source annual integrals are preserved. The minimum
-background remains; the excess is transported through a circular warp:
-
-```text
-theta' = 2 atan2(width_factor * sin(theta/2), cos(theta/2))
-```
-
-Widths above one broaden the peak region; widths below one narrow it. Timing
-and width preserve annual mass; magnitude scales both background and excess.
-Width is a local time dilation, not an exact standard-deviation multiplier.
-Review actual circular RMS width in `forcing_diagnostics.json`. Constants and
-zero forcing remain well defined. The smooth curves are integrated into MF6
-STEPWISE interval means, so neighboring MF6 rates can still differ; annual
-continuous periodicity does not require the first and last interval means to
-be equal. Handoffs include exact monthly and weekly integrals for staged spinup.
-The historical equal-month September/October/November fall average is retained.
-
-Land infiltration follows transformed precipitation and the existing calendar
-recharge factors; changing rain timing can therefore change annual infiltration.
-Lake evaporation follows transformed ET. Local DRN elevations (or optional
-constant GHB heads) and independent Manning outlet inverts remain fixed across
-forcing variants with the same boundary configuration. Every member uses its modified drivers throughout its own spinup
-and monitored phases.
-
-`forcing_mode="legacy"` retains the original stepwise source construction and
-requires identity controls. Compare legacy and smooth baselines before interpreting
-the effect of smooth forcing as a parameter sensitivity.
-
-## Outputs and retention
-
-`member_index.csv` records parameters, status, elapsed time, provenance location
-and output paths. `ensemble_summary.csv` combines the original scientific summary
-rows with member IDs and sweep values. Failed/pending members appear in the index
-and are excluded from scientific result rows. Existing member summary formats
-are retained. One locked collector writes campaign CSVs atomically; invoke
-`bdam_sweeps.py collect campaign.json` to refresh them.
-
-Full retention is the default. Explicit `run ... --retention compact` removes
-large successful MF6 binaries/package inputs only after complete validation.
-It keeps all scientific CSVs, JSON QA and solver statistics, listings, attempt
-logs, forcing diagnostics, configuration/source/input provenance and extracted
-restart arrays in `Runs/restart_states.npz`. Compact results do not support the
-binary Results Viewer. Failed attempts always retain their complete diagnostics.
-
-The older release disk/runtime figures describe a smaller grid and shorter run.
-Measure the full-output baseline and peak simultaneous staging before allocating
-a large campaign. Never weaken solver/budget checks to make a member pass.
-
-## Validation
-
-```zsh
-MPLCONFIGDIR=/absolute/local/cache python3 -m unittest -v \
-  test_bdam_workflow.py test_bdam_sweeps.py
-```
-
-Pilot acceptance requires the full 0/4/1 + 2/2 baseline, then a small factorial
-campaign run serially and with two active solvers. Compare scientific summary
-CSV values; timestamps and runtime logs are not scientific differences. Report
-water-balance QA, saved-step counts, runtime, memory, storage and interannual
-state changes. Random/interannual weather and distributed execution are deferred.
-
-## v0.2.0 migration
-
-New campaigns require schema v6 and campaign/parameter schema v2. Regenerate geometry and both handoffs. The river helper is included in scientific source fingerprints. Old remote-stage/rating controls have been removed; use the explicit local boundary controls in MakeInputs. Legacy preview width/depth controls are fixed intermediate placeholders, not sweep axes. Pond-bank cutoff, Manning width/roughness and storage extent are registered scalars. Losing/disconnected members and altered parameters require their own physical review even when numerical validation passes.
+Forcing transforms, parallel execution, retention and result collection remain
+supported by the current interface; see `PARAMETERS.md`. Historical sweep results
+and their original calendars/physics are preserved in
+[SWEEP_VALIDATION.md](SWEEP_VALIDATION.md), not used as current operating commands.
