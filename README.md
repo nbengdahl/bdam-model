@@ -25,6 +25,7 @@ framework with synthetic forcing and assumed material properties.
 | Groundwater edge fluxes, DRN/GHB and surface outlet | [Boundary contract](BOUNDARY_ASSUMPTIONS.md) |
 | Automated agents modifying or running the model | [Agent runbook](AGENTS.md) |
 | Monitoring CSV contract and verification | [Monitoring validation](MONITORING_VALIDATION.md) |
+| Adaptive spinup criteria and bounded verification | [Spinup validation](SPINUP_CONVERGENCE_VALIDATION.md) |
 | Current validation and historical evidence | [Edge-flux verification](EDGE_FLUX_VALIDATION.md), [cleanup and validation index](CLEANUP_VALIDATION.md) |
 | Previous vector-sweep requests | [Deprecated adapter and migration](SWEEPS.md) |
 
@@ -49,6 +50,10 @@ for automatic values, blank-file exceptions and a worked example.
   precipitation, ET and inflow with optional magnitude, timing and width controls.
 - 0 fall-average / 4 monthly / 1 weekly spinup years, followed by 2 pre-dam and
   2 post-dam years at weekly resolution. Daily monitored output is optional.
+- Optional `mf6_parameters.spinup_until_converged=true` retains fall/monthly
+  warmup and runs up to 10 weekly years until year-end relative state changes
+  pass twice consecutively. Unconverged cases stop as `DNC`; table sweeps continue.
+  See [convergence controls](PARAMETERS.md#optional-convergence-controlled-spinup).
 - Four retained stream monitoring points plus six bottom-layer grid points.
   Optional `monitoring_points_file` replaces the six grid points with CSV
   `x,y,z,name` locations, where z is depth below ground in meters; outside points

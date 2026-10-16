@@ -42,6 +42,62 @@ regenerate the parameter reference. `MakeInputs.m` has no editable defaults bloc
 Existing frozen studies retain their captured source/settings; use a fresh study
 to adopt changed registry defaults.
 
+## Optional convergence-controlled spinup
+
+Set `mf6_parameters.spinup_until_converged` to `true` in a case row or shared
+settings (Python `True`, MATLAB logical `true`, CSV/JSON `true`). It defaults to
+`false`, preserving the fixed spinup schedule. Enabled runs retain configured
+fall/monthly warmup and replace `weekly_spinup_years` with an adaptive weekly
+loop. `spinup_max_weekly_years` defaults to 10 and must be an integer at least 3;
+this limit counts only weekly spinup years, excluding warmup and monitored years.
+Every weekly year contains 52 steps totaling 365 days, even with daily monitoring.
+
+Compare consecutive September year-end states, using the largest relative
+change across all groundwater cells, all lakes and all UZF features separately:
+
+`abs(new-old) / max(abs(new-reference), abs(old-reference), denominator_floor)`.
+
+| Parameter under `mf6_parameters` | Default | Reference | Denominator floor |
+| --- | ---: | --- | ---: |
+| `spinup_head_relative_tolerance` | 0.001 (0.1%) | Each cell bottom | 1 m |
+| `spinup_stage_relative_tolerance` | 0.01 (1%) | Each lake's lowest bed | 0.1 m |
+| `spinup_water_content_relative_tolerance` | 0.005 (0.5%) | Zero | 0.05 m³/m³ |
+
+Tolerances must be finite and positive. All three criteria must pass for two
+consecutive year-pairs; the earliest stop is after three weekly years. Warmup
+does not count toward comparisons. A failing year-pair resets the passing streak.
+The criteria measure year-end repeatability, not agreement throughout the
+seasonal cycle, calibration or physical accuracy. Solver and water-budget QA
+remain unchanged. Denominator floors are fixed, documented constants.
+
+For example:
+
+```python
+study.submit([{'case_id': 'adaptive',
+               'mf6_parameters.spinup_until_converged': True}], 'adaptive')
+```
+
+Annual outputs appear in `Runs/spinup/weekly/year_NN`. Reports
+`Runs/spinup_convergence.csv` and `.json` are updated after each weekly year,
+along with `spinup_summary.csv`. They record relative/absolute maxima, controlling
+MF6 zero-based indices (head: layer/row/column; stage/UZF: feature index),
+thresholds, pass flags, consecutive-pass count and outcome. The first year is a
+baseline with no comparison metrics. For heads/stages the absolute changes are
+meters; for UZF they are m³/m³.
+
+After convergence, monitored years inherit the last state. At the cap without
+convergence, the case stops as **DNC (did not converge)**, retains diagnostics and
+skips monitored years. Standalone execution exits with code 3. Studies report
+`DNC` in Python/MATLAB results and `case_index.csv` and continue remaining rows;
+they do not assign objective penalties. Batch CLI evaluation exits nonzero after
+processing all rows if any row did not pass. DNC receives no successful completion
+receipt and is distinct from input/solver failures. Re-evaluation may retry it.
+The monthly-stop diagnostic remains warmup-only and cannot certify convergence.
+
+Use fresh studies to adopt this source change. Full and compact successful reuse
+recompute convergence metrics from retained annual final states. Compact results
+keep reports and restart states; binary viewing still requires full retention.
+
 ## Local setup
 
 Copy the complete package to local, nonsynchronized storage. Install the pinned

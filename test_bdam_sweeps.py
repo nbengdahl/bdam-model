@@ -231,6 +231,7 @@ class CampaignTests(unittest.TestCase):
     def test_compact_completion_and_resume_validate_results_without_rewriting(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp); (path/'Runs').mkdir()
+            write(path/'resolved_config.json', resolve(configuration()))
             np.savez_compressed(path/'Runs'/'restart_states.npz',heads=np.ones((1,2,2)))
             (path/'Runs'/'weekly_summary.csv').write_text('phase,time_days\npre_dam,365\n')
             write(path/'prepared.json',dict(handoff_hashes={}))

@@ -22,6 +22,7 @@ except ImportError:  # Windows single-run compatibility; campaign locks use msvc
     fcntl = None
     import msvcrt
 import numpy as np
+import bdam_spinup as spinup
 
 HERE = Path(__file__).resolve().parent
 _LOCK_STATE = threading.local()
@@ -120,6 +121,7 @@ def resolve(config):
 def validate(config):
     integer(config["n_parallel_runs"], "n_parallel_runs")
     mf, dam = config["mf6_parameters"], config["dam_settings"]
+    spinup.settings(mf)
     for name in ("fall_average_spinup_years", "monthly_spinup_years", "weekly_spinup_years", "pre_dam_years", "post_dam_years"):
         integer(mf[name], f"mf6_parameters.{name}", 0)
     if mf["pre_dam_years"]+mf["post_dam_years"] == 0:
@@ -326,6 +328,10 @@ def expected_workspaces(path):
     config = read(Path(path)/"resolved_config.json")
     mf = config["mf6_parameters"]
     fall, monthly, weekly = (mf[n] for n in ("fall_average_spinup_years", "monthly_spinup_years", "weekly_spinup_years"))
+    convergence = spinup.settings(mf)
+    adaptive = convergence['spinup_until_converged']
+    if adaptive:
+        weekly = 0
     result = []
     if fall:
         result += [("spinup/initial_relaxation", "pre_dam", 7., 1), ("spinup/first_annual", "pre_dam", 365., 1)]
@@ -336,6 +342,9 @@ def expected_workspaces(path):
     if years > 1:
         steps = fall+monthly*12+weekly*52-(1 if fall else 12 if monthly else 52)
         result.append(("spinup/staged", "pre_dam", (years-1)*365., steps))
+    if adaptive:
+        report = spinup.validate_report(Path(path)/'Runs', convergence)
+        result.extend((relative, 'pre_dam', 365., 52) for relative in report['weekly_workspaces'])
     count = 365 if config["time_resolution"] == "daily" else 52
     for phase in ("pre_dam", "post_dam"):
         result.extend((f"{phase}/year_{year:02d}", phase, 365., count)
@@ -364,6 +373,10 @@ def validate_results(path, save_restart=True):
             states[f"{prefix}_{name}"] = value
         records.append(dict(workspace=relative, final_time=final_time, steps=steps))
     config = read(path/"resolved_config.json")
+    convergence = spinup.settings(config['mf6_parameters'])
+    if convergence['spinup_until_converged']:
+        report = spinup.validate_report(path/'Runs', convergence)
+        spinup.validate_states(report, load_handoff(path/'ModelInput/pre_dam/preparation_handoff.h5'), states)
     summaries = [f"{config['time_resolution']}_summary.csv"]
     if any(relative.startswith("spinup/") for relative,_,_,_ in expected_workspaces(path)):
         summaries.append("spinup_summary.csv")
@@ -403,6 +416,11 @@ def _complete(path, fingerprint):
         with np.load(path/"Runs"/"restart_states.npz") as states:
             if not states.files or any(not np.all(np.isfinite(states[name])) for name in states.files):
                 return False
+            convergence = spinup.settings(read(path/'resolved_config.json')['mf6_parameters'])
+            if convergence['spinup_until_converged']:
+                from build_bdam_simulation import load_handoff
+                report = spinup.validate_report(path/'Runs', convergence)
+                spinup.validate_states(report, load_handoff(path/'ModelInput/pre_dam/preparation_handoff.h5'), states)
     return True
 
 
@@ -432,7 +450,7 @@ def run_member(manifest, member, retention="full"):
             provenance = verify_snapshot(path)
             if complete(path, member["fingerprint"]):
                 return dict(id=member["id"], status="pass", resumed=True)
-            if waited and (path/"status.json").exists() and read(path/"status.json").get("status") == "failed":
+            if waited and (path/"status.json").exists() and read(path/"status.json").get("status") in ("failed", "DNC"):
                 return read(path/"status.json")
             prepared = read(path/"prepared.json")
             if prepared["fingerprint"] != member["fingerprint"]:
@@ -447,6 +465,8 @@ def run_member(manifest, member, retention="full"):
             # Preserve every failed prior attempt without reusing its workspace.
             if (path/"Runs").exists():
                 shutil.move(path/"Runs", attempt_path/"prior_Runs")
+            if (path/'completion.json').exists():
+                shutil.move(path/'completion.json', attempt_path/'prior_completion.json')
             cache = path/"matplotlib-cache"; cache.mkdir(exist_ok=True)
             env = {**os.environ, "MPLCONFIGDIR": str(cache), "PYTHONUNBUFFERED": "1"}
             env["BDAM_CAMPAIGN_MANIFEST"] = str(Path(manifest["root"])/"campaign.json")
@@ -457,6 +477,18 @@ def run_member(manifest, member, retention="full"):
                                           "--staging-root", str(attempt_path/"staging")],
                                          cwd=path, env=env, stdout=log, stderr=subprocess.STDOUT,
                                          **({"pass_fds": lock_fds()} if os.name == "posix" else {}))
+            if process.returncode == spinup.DNC_EXIT_CODE:
+                convergence = spinup.settings(read(path/'resolved_config.json')['mf6_parameters'])
+                if not convergence['spinup_until_converged']:
+                    raise RuntimeError('Unexpected DNC exit from fixed spinup.')
+                report = spinup.validate_report(path/'Runs', convergence, require_converged=False)
+                if report['outcome'] != 'DNC':
+                    raise RuntimeError('DNC exit without a matching convergence report.')
+                status = dict(id=member['id'], status='DNC', phase='spinup',
+                              error=f"DNC (did not converge) after {report['years_completed']} weekly years; inspect {attempt_path}",
+                              elapsed_seconds=time.monotonic()-start)
+                write(path/'status.json', status)
+                return status
             if process.returncode:
                 raise RuntimeError(f"Model exited {process.returncode}; inspect {attempt_path}")
             records = validate_results(path)

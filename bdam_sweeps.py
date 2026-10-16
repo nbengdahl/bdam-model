@@ -19,6 +19,10 @@ def expand(config, scalar_defaults, skip_baseline=False):
     axes = {}
     for name, default in scalar_defaults.items():
         value = get(config, name)
+        if isinstance(default, bool):
+            if type(value) is not bool:
+                raise ValueError(f"{name} requires a scalar true or false.")
+            continue
         if value is None or value == []:
             if default is None or name == "groundwater_boundary_k_m_per_day":
                 continue

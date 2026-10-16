@@ -64,7 +64,12 @@
     "river_settings.river_storage_height_above_highest_bed_m": 0.5,
     "groundwater_edge_flux.x_min_m3_per_day": 0.0,
     "groundwater_edge_flux.x_max_m3_per_day": 0.0,
-    "groundwater_edge_flux.y_max_m3_per_day": 0.0
+    "groundwater_edge_flux.y_max_m3_per_day": 0.0,
+    "mf6_parameters.spinup_until_converged": false,
+    "mf6_parameters.spinup_max_weekly_years": 10,
+    "mf6_parameters.spinup_head_relative_tolerance": 0.001,
+    "mf6_parameters.spinup_stage_relative_tolerance": 0.01,
+    "mf6_parameters.spinup_water_content_relative_tolerance": 0.005
   },
   "dependent_defaults": {
     "K_by_layer_top_to_bottom": "0.03 repeated n_layers times",
@@ -827,6 +832,40 @@
       "type": "string",
       "units": "CSV filename; x,y in model meters, z depth below ground in meters",
       "automatic": false
+    },
+    "mf6_parameters.spinup_until_converged": {
+      "default": false,
+      "type": "boolean",
+      "units": "dimensionless",
+      "automatic": false
+    },
+    "mf6_parameters.spinup_max_weekly_years": {
+      "default": 10,
+      "type": "integer",
+      "units": "years",
+      "automatic": false,
+      "minimum": 3
+    },
+    "mf6_parameters.spinup_head_relative_tolerance": {
+      "default": 0.001,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "mf6_parameters.spinup_stage_relative_tolerance": {
+      "default": 0.01,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "mf6_parameters.spinup_water_content_relative_tolerance": {
+      "default": 0.005,
+      "type": "number",
+      "units": "dimensionless",
+      "automatic": false,
+      "exclusive_minimum": 0
     }
   },
   "defaults": {
@@ -861,7 +900,12 @@
       "monthly_spinup_years": 4,
       "weekly_spinup_years": 1,
       "pre_dam_years": 2,
-      "post_dam_years": 2
+      "post_dam_years": 2,
+      "spinup_until_converged": false,
+      "spinup_max_weekly_years": 10,
+      "spinup_head_relative_tolerance": 0.001,
+      "spinup_stage_relative_tolerance": 0.01,
+      "spinup_water_content_relative_tolerance": 0.005
     },
     "post_dam_weir_width_m": 2.0,
     "dam_settings": {

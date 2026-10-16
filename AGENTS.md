@@ -242,6 +242,22 @@ Compare HDF5 datasets, not container bytes; numerical CSV/binary differences are
 substantive. Ignore only known timestamps, paths and elapsed-time text. Never
 weaken QA to obtain agreement.
 
+## Adaptive spinup verification
+
+`mf6_parameters.spinup_until_converged` defaults to false. Enabled runs retain
+fall/monthly warmup and use annual `spinup/weekly/year_NN` workspaces with 52
+steps each. Derive actual counts from `bdam_runtime.expected_workspaces` and the
+validated convergence report. DNC is not a solver failure or successful completion;
+skip its monitored years, preserve diagnostics, and continue other study members.
+
+This feature has user-authorized bounded verification: tiny synthetic/mocked
+tests plus `tools/verify_spinup_convergence.py` from a local source copy. The
+verifier uses a 15×20×3 grid, three weekly spinup years and one monitored year,
+with deliberately loose test-only tolerances and an equivalent fixed-duration
+annual-restart control. Keep the full weekly calendar and strict solver/budget
+checks. Do not issue production completion receipts for this smoke verification.
+No full default-size run is required for this feature.
+
 ## Prescribed groundwater edge fluxes
 
 `groundwater_edge_flux.{x_min,x_max,y_max}_m3_per_day` are finite signed total

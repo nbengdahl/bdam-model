@@ -87,6 +87,11 @@ initial depth is fixed at 0.10 m and installation conserves inherited volume.
 | `mf6_parameters.weekly_spinup_years` | `1` | integer | count | ≥ 0 |
 | `mf6_parameters.pre_dam_years` | `2` | integer | count | ≥ 0 |
 | `mf6_parameters.post_dam_years` | `2` | integer | count | ≥ 0 |
+| `mf6_parameters.spinup_until_converged` | `false` | boolean | dimensionless | See preparation constraints |
+| `mf6_parameters.spinup_max_weekly_years` | `10` | integer | years | ≥ 3 |
+| `mf6_parameters.spinup_head_relative_tolerance` | `0.001` | number | dimensionless | > 0 |
+| `mf6_parameters.spinup_stage_relative_tolerance` | `0.01` | number | dimensionless | > 0 |
+| `mf6_parameters.spinup_water_content_relative_tolerance` | `0.005` | number | dimensionless | > 0 |
 
 ## dam_settings
 

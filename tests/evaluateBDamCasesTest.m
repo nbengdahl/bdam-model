@@ -6,6 +6,22 @@ classdef evaluateBDamCasesTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function convergenceBooleanAndDncRoundtrip(testCase)
+            folder=string(tempname); mkdir(folder);
+            testCase.addTeardown(@()rmdir(folder,"s"));
+            cases=table("adaptive",true,3, ...
+                VariableNames=["case_id","mf6_parameters.spinup_until_converged", ...
+                "mf6_parameters.spinup_max_weekly_years"]);
+            submitted=evaluateBDamCases(cases,folder,"adaptive",Action="submit");
+            testCase.verifyTrue(submitted.cases.resolved_parameters.mf6_parameters.spinup_until_converged);
+            execution=string(submitted.cases.output_path);
+            fid=fopen(fullfile(execution,"status.json"),"w");
+            fwrite(fid,jsonencode(struct("status","DNC","phase","spinup", ...
+                "error","DNC (did not converge)"))); fclose(fid);
+            collected=evaluateBDamCases([],folder,"adaptive",Action="collect");
+            testCase.verifyEqual(string(collected.status),"DNC");
+            testCase.verifyEqual(string(collected.error.phase),"spinup");
+        end
         function tableNamesAndAutomaticValuesRoundtrip(testCase)
             folder=string(tempname); mkdir(folder);
             testCase.addTeardown(@()rmdir(folder,"s"));

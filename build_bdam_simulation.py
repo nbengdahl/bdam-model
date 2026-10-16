@@ -25,6 +25,7 @@ from typing import Callable
 import h5py
 import numpy as np
 import flopy
+import bdam_spinup as spinup
 
 SCHEMA = "bdam-preparation-hdf5-v8"
 REQUIRED_BINARY_OUTPUTS = (
@@ -2066,6 +2067,10 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     staging_root = (Path(staging_root) if staging_root is not None
                     else Path(tempfile.gettempdir()) / "bdam-staging")
     pre, post = load_handoff(pre_path), load_handoff(post_path)
+    convergence = spinup.handoff_settings(pre)
+    if convergence != spinup.handoff_settings(post):
+        raise ValueError("Paired handoffs have inconsistent convergence settings.")
+    adaptive = convergence['spinup_until_converged'] and not stop_after_monthly_spinup
     if pre.manifest["scenario"] != "pre_dam" or post.manifest["scenario"] != "post_dam":
         raise ValueError("Paired handoffs must be labeled pre_dam and post_dam.")
     spinup_names = ("fall_average_spinup_years", "monthly_spinup_years", "weekly_spinup_years")
@@ -2089,7 +2094,7 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
     stages = wc = None
     spinup_rows: list[dict] = []
     spinup_counts = {name: values[name] for name in spinup_names}
-    if stop_after_monthly_spinup:
+    if stop_after_monthly_spinup or adaptive:
         spinup_counts["weekly_spinup_years"] = 0
     if sum(spinup_counts.values()):
         if spinup_counts["fall_average_spinup_years"]:
@@ -2141,8 +2146,52 @@ def run_from_handoff(path: str | Path, staging_root: str | Path | None = None,
         print("Diagnostic run completed at the end of monthly spinup.")
         return
 
+    if adaptive:
+        refs = spinup.references(pre)
+        weekly_schedule, _ = _staged_spinup_schedule(pre, {
+            'fall_average_spinup_years': 0, 'monthly_spinup_years': 0, 'weekly_spinup_years': 1})
+        elapsed_spinup = 365.0 * sum(spinup_counts.values())
+        previous = None
+        comparisons = []
+        streak = 0
+        for year in range(1, convergence['spinup_max_weekly_years']+1):
+            weekly_ws = workspace / 'spinup' / 'weekly' / f'year_{year:02d}'
+            initial_heads, initial_stages = heads, stages
+            heads, stages, wc = _run_year(
+                pre_path, pre, weekly_ws, heads, stages, wc, True, Path(staging_root),
+                phase='spinup_weekly', year=year, runtime_schedule=weekly_schedule,
+                solver_profile='conservative' if year == 1 and not sum(spinup_counts.values()) else solver_profile,
+                save_inner_iterations=save_inner_iterations)
+            current = (heads, stages, wc)
+            measured = spinup.comparison(previous if previous is not None else current, current, refs, convergence)
+            row = dict(weekly_year=year, passed=False, consecutive_passes=0)
+            if previous is not None:
+                row.update(measured)
+                streak = streak+1 if row['passed'] else 0
+                row['consecutive_passes'] = streak
+            comparisons.append(row)
+            labels = [SpinupStep('spinup_weekly', 'weekly', year, (year-1)*365.0+float(t))
+                      for t in np.cumsum(weekly_schedule.perlen_days)]
+            spinup_rows.extend(_period_rows(
+                pre, weekly_ws, initial_heads, initial_stages, 'spinup_weekly', year,
+                elapsed_spinup, include_initial=not spinup_rows,
+                runtime_schedule=weekly_schedule, step_metadata=labels))
+            elapsed_spinup += 365.0
+            outcome = ('converged' if streak >= 2 else 'DNC'
+                       if year == convergence['spinup_max_weekly_years'] else 'running')
+            _write_summary(workspace / 'spinup_summary.csv', spinup_rows)
+            spinup.write_report(workspace, convergence, comparisons, outcome)
+            print(f"Weekly spinup year {year}: {outcome}; consecutive passes={streak}.", flush=True)
+            if streak >= 2:
+                break
+            previous = tuple(np.array(value, copy=True) for value in current)
+        else:
+            raise spinup.SpinupDidNotConverge(
+                f"DNC (did not converge) after {convergence['spinup_max_weekly_years']} weekly years; "
+                f"diagnostics retained at {workspace}; monitored years skipped.")
+
     rows: list[dict] = []
-    first_annual_pending = not bool(sum(spinup_counts.values()))
+    first_annual_pending = not adaptive and not bool(sum(spinup_counts.values()))
     elapsed_days = 0.0
     for year in range(1, values["pre_dam_years"] + 1):
         run_ws = workspace / "pre_dam" / f"year_{year:02d}"
@@ -2214,5 +2263,14 @@ def main() -> None:
                              stop_after_monthly_spinup=args.stop_after_monthly_spinup)
 
 
+def cli() -> None:
+    """Translate only exhausted spinup into the dedicated standalone exit code."""
+    try:
+        main()
+    except spinup.SpinupDidNotConverge as exc:
+        print(str(exc), flush=True)
+        raise SystemExit(spinup.DNC_EXIT_CODE)
+
+
 if __name__ == "__main__":
-    main()
+    cli()

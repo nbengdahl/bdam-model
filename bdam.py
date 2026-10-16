@@ -119,7 +119,10 @@ def resolve_case(overrides, shared, schema):
                 raise ValueError(f"{name} does not support an automatic value.")
             continue
         kind = spec["type"]
-        if kind == "string":
+        if kind == "boolean":
+            if type(value) is not bool:
+                raise ValueError(f"{name} requires true or false.")
+        elif kind == "string":
             if not isinstance(value, str) or (not value.strip() and name not in ("hydrofacies_points_file", "monitoring_points_file")):
                 raise ValueError(f"{name} requires text; blank cells are invalid.")
             if "enum" in spec and value not in spec["enum"]:
@@ -505,7 +508,7 @@ class Study:
                                             **{f"metadata.{k}":v for k,v in case["metadata"].items()},"summary":summary.name})
                         elif row["status"]=="pass":
                             row.update(status="invalid",qa_status="fail",error=dict(phase="validation",type="IntegrityError",message="Completion validation failed."))
-                        elif row["status"]=="failed":
+                        elif row["status"] in ("failed", "DNC"):
                             row["error"]=dict(phase=status.get("phase","simulation"),type="ExecutionError",message=status.get("error","Unknown failure"))
                     results.append(row)
             folder=self.root/"results"/(batch_id or "all")

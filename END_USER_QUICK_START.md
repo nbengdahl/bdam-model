@@ -155,6 +155,17 @@ Do not globally select conservative settings or subdivide time steps to force
 convergence. `--stop-after-monthly-spinup` is an explicit standalone diagnostic
 that stops before weekly spinup and monitoring; it is not a complete default run.
 
+For optional adaptive spinup, set `mf6_parameters.spinup_until_converged=true`
+in shared settings or a case row. Warmup is retained, then up to 10 weekly years
+are compared at September year-end. Two consecutive passing comparisons are
+required (at least three weekly years); defaults are 0.1% groundwater head, 1%
+lake depth and 0.5% UZF water content with physical references and denominator
+floors. See [criteria and controls](PARAMETERS.md#optional-convergence-controlled-spinup).
+Adaptive workspaces are `Runs/spinup/weekly/year_NN`; convergence CSV/JSON reports
+are updated yearly. At the cap, `DNC` skips monitored years and preserves outputs;
+standalone exits 3, and table sweeps continue other rows. The fixed default's
+workspace and saved-step counts above apply only when adaptive spinup is disabled.
+
 ## 4. Monitor and confirm completion
 
 A quiet terminal is normal: MF6 stdout is captured. Inspect the active

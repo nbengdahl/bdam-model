@@ -231,6 +231,12 @@ for index = 1:numel(names)
             "Path",string(path),"Phase","spinup","PhaseYear",index);
     end
 end
+weekly = annualWorkspaces(fullfile(runsPath,"spinup"),"weekly");
+for index = 1:numel(weekly)
+    weekly(index).Phase = "spinup";
+    weekly(index).PhaseYear = numel(definitions)+index;
+end
+definitions = [definitions;weekly];
 end
 
 function targets = normalizeTargets(targets)
