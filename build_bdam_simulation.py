@@ -44,7 +44,7 @@ SOLVER_STATS_OUTPUT = "bdam.solver_stats.json"
 # MF6 also uses this LAK tolerance to set its finite-difference stage increment.
 # Its 1e-5 default can oscillate at the bed during evaporation-limited recession,
 # even with a valid zero-volume bottom. Keep the local solve tighter than IMS.
-LAK_STAGE_TOLERANCE = 1.0e-7
+LAK_STAGE_TOLERANCE = 5.0e-7
 SOLVER_PROFILES = {
     "balanced": "MODERATE",
     "conservative": "COMPLEX",
