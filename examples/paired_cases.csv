@@ -1,3 +1,3 @@
-case_id,K_constant,specific_yield,river_settings.downstream_segments,geometry.dam_height_m,metadata.label
-a,0.01,0.1,1,1.5,paired A
-b,0.02,0.2,3,1.4,paired B
+case_id,K_constant,specific_yield,river_settings.downstream_segments,geometry.dam_height_m,dam_settings.under_dam_k_m_per_day,dam_settings.leakage_halo_cells,metadata.label
+a,0.01,0.1,1,1.5,1.0,1,paired A
+b,0.02,0.2,3,1.4,0.5,1,paired B

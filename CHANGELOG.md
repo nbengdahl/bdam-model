@@ -2,6 +2,15 @@
 
 ## parameters-table (unreleased)
 
+### Independent under-dam K and one-cell halo — 2026-10-21
+
+- Use `dam_settings.under_dam_k_m_per_day` (default 1 m/day) for a uniform
+  isotropic core. Remove both old dimensionless conductivity multipliers.
+- Add `dam_settings.leakage_halo_cells` (0 or 1, default 1); average each
+  halo component with its local background in the same treated layers.
+- Export separate core/halo masks and review counts with unchanged HDF5 v8.
+  Registry v7 requires fresh studies; frozen studies are preserved.
+
 ### Reachable dry pond and dry-state restarts — 2026-10-21
 
 - Recompute pond storage at terrain elevations and start the table at the

@@ -33,6 +33,10 @@ writeArray(h5_path, "/properties/Sy", p.Sy); writeArray(h5_path, "/properties/Ss
 writeArray(h5_path, "/properties/Porosity", p.Porosity);
 writeArray(h5_path, "/properties/BDA_LEAKAGE_MASK", uint8(p.BDA_LEAKAGE_MASK));
 writeArray(h5_path, "/properties/BDA_LEAKAGE_FOOTPRINT", uint8(p.BDA_LEAKAGE_FOOTPRINT));
+for name=["BDA_LEAKAGE_CORE_FOOTPRINT","BDA_LEAKAGE_HALO_FOOTPRINT", ...
+        "BDA_LEAKAGE_CORE_MASK","BDA_LEAKAGE_HALO_MASK"]
+    writeArray(h5_path,"/properties/"+name,uint8(p.(name)));
+end
 
 c = preparation.parameters.calendar;
 writeArray(h5_path, "/calendar/perlen_days", c.perlen_days); writeArray(h5_path, "/calendar/nstp", c.nstp);
@@ -103,6 +107,8 @@ writeArray(h5_path, "/surface_water/outlets/type_code", sw.outlets.type_code);
 writeArray(h5_path, "/surface_water/outlets/roughness", sw.outlets.roughness);
 writeArray(h5_path, "/surface_water/outlets/slope", sw.outlets.slope);
 if preparation.metadata.scenario == "post_dam"
+    writeArray(h5_path,"/surface_water/dam/under_dam_k_m_per_day",sw.dam.under_dam_k_m_per_day);
+    writeArray(h5_path,"/surface_water/dam/leakage_halo_cells",sw.dam.leakage_halo_cells);
     writeArray(h5_path, "/surface_water/dam/crest_elevation_m", sw.dam.crest_elevation_m);
     writeArray(h5_path, "/surface_water/dam/maximum_lake_extent_stage_m", sw.dam.maximum_lake_extent_stage_m);
     writeArray(h5_path, "/surface_water/dam/stage_table_maximum_m", sw.dam.stage_table_maximum_m);

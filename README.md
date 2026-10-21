@@ -32,6 +32,16 @@ framework with synthetic forcing and assumed material properties.
 
 ## Current defaults
 
+The under-dam core has independent isotropic conductivity
+`dam_settings.under_dam_k_m_per_day = 1.0` m/day. A one-cell plan-view halo
+(`dam_settings.leakage_halo_cells = 1`, or 0 to disable) follows its actual
+footprint in the same treated layers, including diagonal neighbors. Each halo
+K/K33 component is halfway between its own local background and the core K.
+Old conductivity multiplier inputs are rejected; use fresh studies for the
+updated parameter registry v7. Existing frozen studies retain their sources.
+See [independent-K validation](UNDER_DAM_K_VALIDATION.md) for full-run,
+drying, study-override and cross-branch parity evidence.
+
 Scientific defaults are defined in `bdam_parameter_schema.json`, in each
 `parameters` entry's `default` field. Browse them in the generated
 [parameter reference](PARAMETER_REFERENCE.md). Each case starts from those

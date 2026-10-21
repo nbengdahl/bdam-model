@@ -231,6 +231,8 @@ if scenario_name == "pre_dam"
     dam = emptyDamDefinition();
     BDA_LEAKAGE_FOOTPRINT = false(nx, ny);
     BDA_LEAKAGE_MASK = false(nx, ny, nz);
+    conductivity_zones=struct('core_footprint',false(nx,ny),'halo_footprint',false(nx,ny), ...
+        'core_mask',false(nx,ny,nz),'halo_mask',false(nx,ny,nz));
 else
     dam = reference_dam;
     [stage_area_volume, maximum_lake_mask] = makeStageAreaVolume( ...
@@ -244,12 +246,10 @@ else
     pond.initial_stage_m = dam.initial_stage_m;
     pond.stage_area_volume = stage_area_volume;
     lakes = [pond, river_template];
-    BDA_LEAKAGE_FOOTPRINT = channel_mask & dam_distance <= dam.leakage_half_width_cells * max(dx, dy);
-    BDA_LEAKAGE_MASK = false(nx, ny, nz);
-    top_native_layers = nz:-1:(nz - dam.leakage_n_top_layers + 1);
-    BDA_LEAKAGE_MASK(:,:,top_native_layers) = repmat(BDA_LEAKAGE_FOOTPRINT, 1, 1, numel(top_native_layers));
-    K(BDA_LEAKAGE_MASK) = K_background(BDA_LEAKAGE_MASK) * dam.k_multiplier;
-    K33(BDA_LEAKAGE_MASK) = K33_background(BDA_LEAKAGE_MASK) * dam.k33_multiplier;
+    [K,K33,conductivity_zones]=applyBDamConductivity(K_background,K33_background, ...
+        channel_mask,dam_distance,dx,dy,dam);
+    BDA_LEAKAGE_FOOTPRINT=conductivity_zones.footprint;
+    BDA_LEAKAGE_MASK=conductivity_zones.mask;
     assert(all(K(~BDA_LEAKAGE_MASK) == K_background(~BDA_LEAKAGE_MASK), "all") && ...
         all(K33(~BDA_LEAKAGE_MASK) == K33_background(~BDA_LEAKAGE_MASK), "all"), ...
         "Post-dam hydraulic-property changes extend outside the BDA mask.");
@@ -311,6 +311,10 @@ preparation.properties.Sy = Sy; preparation.properties.Ss = Ss; preparation.prop
 preparation.properties.Porosity = Porosity;
 preparation.properties.BDA_LEAKAGE_FOOTPRINT = BDA_LEAKAGE_FOOTPRINT;
 preparation.properties.BDA_LEAKAGE_MASK = BDA_LEAKAGE_MASK;
+preparation.properties.BDA_LEAKAGE_CORE_FOOTPRINT=conductivity_zones.core_footprint;
+preparation.properties.BDA_LEAKAGE_HALO_FOOTPRINT=conductivity_zones.halo_footprint;
+preparation.properties.BDA_LEAKAGE_CORE_MASK=conductivity_zones.core_mask;
+preparation.properties.BDA_LEAKAGE_HALO_MASK=conductivity_zones.halo_mask;
 preparation.surface_water = struct();
 preparation.surface_water.channel_mask = channel_mask;
 preparation.surface_water.coarse_river = river_configuration;
@@ -324,7 +328,8 @@ preparation.monitoring = monitoring;
 
 %% 7. Review figures and write this scenario handoff
 if show_figures
-makeReviewFigures(X, Y, ZTop, channel_mask, lakes, dam, BDA_LEAKAGE_FOOTPRINT, ...
+makeReviewFigures(X, Y, ZTop, channel_mask, lakes, dam, ...
+    double(conductivity_zones.core_footprint)+2*double(conductivity_zones.halo_footprint), ...
     groundwater_mask, uzf, monitoring, scenario_name);
 makeForcingFigure(forcing);
 end
@@ -542,7 +547,9 @@ function dam = makeDamDefinition(p, settings, X, Y, ZTop, dx, dy, nz)
         p.dam_endpoints_xy(:,2) >= min(Y(:)) & p.dam_endpoints_xy(:,2) <= max(Y(:))), "Dam endpoints must be distinct and within the domain.");
     assert(any(settings.upstream_side == ["left", "right"]) && settings.crest_height_above_dam_toe_m > 0 && ...
         settings.leakage_half_width_cells >= 0 && ...
-        settings.leakage_n_top_layers >= 1 && settings.leakage_n_top_layers <= nz && settings.k_multiplier > 0 && settings.k33_multiplier > 0, "Invalid post-dam parameter.");
+        settings.leakage_n_top_layers >= 1 && settings.leakage_n_top_layers <= nz && ...
+        isscalar(settings.under_dam_k_m_per_day) && isfinite(settings.under_dam_k_m_per_day) && ...
+        settings.under_dam_k_m_per_day>0 && ismember(settings.leakage_halo_cells,[0 1]), "Invalid post-dam parameter.");
     spacing = settings.dam_line_sample_spacing_m; if isempty(spacing), spacing = min(dx,dy)/4; end
     assert(isfinite(spacing) && spacing > 0 && settings.stage_table_rows >= 3 && ...
         isfinite(settings.max_lake_extent_height_above_weir_m) && settings.max_lake_extent_height_above_weir_m > 0, ...
@@ -554,7 +561,7 @@ function dam = makeDamDefinition(p, settings, X, Y, ZTop, dx, dy, nz)
     dam.line_xy=line; dam.line_ground_elevation_m=zline; dam.toe_xy=line(ind,:); dam.toe_elevation_m=toe;
     dam.crest_elevation_m=toe+settings.crest_height_above_dam_toe_m; dam.initial_stage_m=toe+min(1,settings.crest_height_above_dam_toe_m);
     dam.leakage_half_width_cells=settings.leakage_half_width_cells; dam.leakage_n_top_layers=settings.leakage_n_top_layers;
-    dam.k_multiplier=settings.k_multiplier; dam.k33_multiplier=settings.k33_multiplier; dam.stage_table_rows=settings.stage_table_rows;
+    dam.under_dam_k_m_per_day=settings.under_dam_k_m_per_day; dam.leakage_halo_cells=settings.leakage_halo_cells; dam.stage_table_rows=settings.stage_table_rows;
     dam.max_lake_extent_height_above_weir_m=settings.max_lake_extent_height_above_weir_m;
     dam.maximum_lake_extent_stage_m=dam.crest_elevation_m+settings.max_lake_extent_height_above_weir_m;
     dam.stage_table_maximum_m=dam.crest_elevation_m+2*settings.max_lake_extent_height_above_weir_m;
@@ -564,7 +571,7 @@ end
 function dam = emptyDamDefinition()
     dam = struct("endpoint_1_xy",[],"endpoint_2_xy",[],"upstream_side","", "length_m",0,"line_xy",[], ...
         "line_ground_elevation_m",[],"toe_xy",[],"toe_elevation_m",NaN,"crest_elevation_m",NaN,"initial_stage_m",NaN, ...
-        "leakage_half_width_cells",0,"leakage_n_top_layers",0,"k_multiplier",1,"k33_multiplier",1,"stage_table_rows",0, ...
+        "leakage_half_width_cells",0,"leakage_n_top_layers",0,"under_dam_k_m_per_day",1,"leakage_halo_cells",0,"stage_table_rows",0, ...
         "max_lake_extent_height_above_weir_m",0,"maximum_lake_extent_stage_m",NaN,"stage_table_maximum_m",NaN,"grid_mask",[]);
 end
 
@@ -623,7 +630,7 @@ function makeReviewFigures(X,Y,ZTop,channel,lakes,dam,leakage,ghb,uzf,monitoring
     plotMonitoringPoints(monitoring,true);
     title("Lake footprints, channel, and monitoring points"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
     nexttile; imagesc(X(:,1),Y(1,:),double(leakage)'); axis image xy; hold on; plotMonitoringPoints(monitoring,false);
-    title("Effective BDA leakage footprint (post-dam only)"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
+    clim([0 2]); title("BDA conductivity: 0 background, 1 core, 2 halo"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
     nexttile; imagesc(X(:,1),Y(1,:),double(ghb(:,:,end))'); axis image xy; hold on; plotMonitoringPoints(monitoring,false);
     title("Downstream layer-1 groundwater boundary cells"); xlabel("X (m)"); ylabel("Y (m)"); colorbar;
     nexttile; imagesc(X(:,1),Y(1,:),double(uzf.eligible_mask(:,:,end))'); axis image xy; hold on; plotMonitoringPoints(monitoring,false);
@@ -685,6 +692,12 @@ function printReviewSummary(prep,calendar)
         d=prep.surface_water.dam; fprintf("  Dam endpoints: (%.3f, %.3f) to (%.3f, %.3f) m\n",d.endpoint_1_xy,d.endpoint_2_xy);
         fprintf("  Toe %.3f m; preparation seed stage %.3f m; crest %.3f m\n",d.toe_elevation_m,d.initial_stage_m,d.crest_elevation_m);
         fprintf("  Effective BDA leakage cells: %d\n",nnz(prep.properties.BDA_LEAKAGE_MASK));
+        for layer=size(prep.properties.K,3):-1:1
+            fprintf("    Layer %d (top-down): core %d, halo %d cells\n", ...
+                size(prep.properties.K,3)-layer+1, ...
+                nnz(prep.properties.BDA_LEAKAGE_CORE_MASK(:,:,layer)), ...
+                nnz(prep.properties.BDA_LEAKAGE_HALO_MASK(:,:,layer)));
+        end
     end
     fprintf("  FloPy handoff: exported after this review summary.\n\n");
 end

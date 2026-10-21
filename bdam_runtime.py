@@ -131,6 +131,9 @@ def validate(config):
     integer(config["channel_half_width_cells"], "channel_half_width_cells", 0)
     integer(dam["leakage_half_width_cells"], "dam_settings.leakage_half_width_cells", 0)
     integer(dam["leakage_n_top_layers"], "dam_settings.leakage_n_top_layers")
+    integer(dam["leakage_halo_cells"], "dam_settings.leakage_halo_cells", 0)
+    if dam["leakage_halo_cells"] not in (0,1):
+        raise ValueError("dam_settings.leakage_halo_cells must be 0 or 1.")
     integer(dam["stage_table_rows"], "dam_settings.stage_table_rows", 3)
     if dam["leakage_n_top_layers"] > config["n_layers"]:
         raise ValueError("Dam leakage layer count exceeds n_layers.")
@@ -140,9 +143,12 @@ def validate(config):
     for name in positive:
         if config[name] <= 0:
             raise ValueError(f"{name} must be positive.")
-    for name in ("k_multiplier","k33_multiplier","max_lake_extent_height_above_weir_m"):
-        if dam[name] <= 0:
-            raise ValueError(f"dam_settings.{name} must be positive.")
+    if "k_multiplier" in dam or "k33_multiplier" in dam:
+        raise ValueError("Obsolete conductivity multiplier; use dam_settings.under_dam_k_m_per_day.")
+    for name in ("under_dam_k_m_per_day","max_lake_extent_height_above_weir_m"):
+        value=dam[name]
+        if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value) or value<=0:
+            raise ValueError(f"dam_settings.{name} must be a finite positive scalar.")
     if dam["dam_line_sample_spacing_m"] not in (None,[]) and dam["dam_line_sample_spacing_m"] <= 0:
         raise ValueError("Dam sample spacing must be positive or automatic.")
     if config["longitudinal_direction"] not in ("x","y"):

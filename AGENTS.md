@@ -72,12 +72,15 @@ consistent. Regenerate `PARAMETER_REFERENCE.md` with
 `python3 tools/update_parameter_reference.py` after registry changes. Display-only
 app settings are not scientific fields. Never use configuration `eval`.
 
-Current parameter registry is v6; the HDF5 preparation schema is v8. Removed fields
+Current parameter registry is v7; the HDF5 preparation schema is v8. Removed fields
 `initial_river_depth_above_outlet_bed_m`, `pre_dam_outlet_width_m` and
 `post_dam.initial_depth_above_dam_toe_m` must be rejected. River depth is a fixed
 0.10 m initial condition; channel widths use `river_settings.manning_width_m`.
 Pond installation conserves inherited volume, independently of preparation seeds.
-Positive dam heights below 1 m and unity K/K33 multipliers must prepare normally.
+Positive dam heights below 1 m and absolute under-dam conductivities below,
+equal to or above background must prepare normally. The isotropic core uses
+`dam_settings.under_dam_k_m_per_day` (default 1 m/day); the optional one-cell
+halo interpolates K and K33 independently. Reject obsolete K/K33 multipliers.
 
 Cases are explicit rows. Core submission must not add references, expand scalar
 vectors as axes, drop duplicate/invalid cases, sample, or assign objective penalties.

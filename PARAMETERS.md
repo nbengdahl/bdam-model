@@ -8,6 +8,20 @@ expand vectors, sample parameters, or assign objective penalties implicitly.
 
 ## Defaults and overrides
 
+`dam_settings.under_dam_k_m_per_day` is a finite positive scalar in m/day,
+default 1.0, setting both core K and K33 independently of background. It may
+be below, equal to or above background. `dam_settings.leakage_halo_cells`
+accepts 0 or 1 (default 1): the same treated layers receive an eight-neighbor
+plan-view ring around the actual core. Halo K = (background K + core K)/2;
+halo K33 = (background K33 + core K)/2. Core/halo masks are exported separately
+and the existing treatment masks describe their union.
+
+Registry v7 removes `dam_settings.k_multiplier` and `dam_settings.k33_multiplier`.
+These obsolete fields are rejected rather than converted; their dimensionless
+values cannot be interpreted as absolute m/day. Use a fresh study and explicit
+absolute-K overrides. Frozen studies and existing prepared v8 handoffs retain
+their original sources and numerical values.
+
 You only need to supply the parameters you want to change. The authoritative
 scientific defaults are in [bdam_parameter_schema.json](bdam_parameter_schema.json),
 under `parameters`: each field has a `default` value. The generated
@@ -321,12 +335,12 @@ seed depth capped by dam height; installation always conserves pre-dam volume.
 
 Strictly positive dam heights below 1 m can now prepare without overriding a
 legacy preview. Zero height is not accepted as a dam geometry; a no-installation
-monitoring case uses `mf6_parameters.post_dam_years=0`. Unity horizontal and
-vertical conductivity multipliers are allowed to retain background aquifer
-conductivity beneath the surface dam. These are preparation capabilities, not
+monitoring case uses `mf6_parameters.post_dam_years=0`. An absolute core K equal
+to both components of an isotropic background leaves those conductivities
+unchanged. These are preparation capabilities, not
 a promise that every parameter combination converges.
 
-Create new studies for the current v6 source/registry and v8 handoff. Preserve old immutable batches,
+Create new studies for the current v7 source/registry and v8 handoff. Preserve old immutable batches,
 source snapshots and results with their original tools. No automatic manifest,
 handoff or removed-control migration is performed. The default numerical model,
 calendar, solver policy, boundaries and closure tolerances are unchanged.
@@ -346,7 +360,7 @@ study scheduling and retention.
 | `specific_yield`, `specific_storage`, `effective_porosity` | Drainable unconfined storage, elastic storage (1/m), and diagnostic saturated groundwater-volume porosity. These do not substitute for UZF residual/saturated water contents. |
 | `channel_half_width_cells`, lakebed K/thickness | Channel mask around each row's transverse minimum and vertical LAK–GWF leakance (K/thickness, default 0.2/day). Connection footprints and storage footprints are distinct. |
 | `river_settings.*` | Downstream pool count, Manning width/roughness, pond connection-height cutoff and river table storage extent. See the river guide for spacing, routing and footprint assumptions. |
-| `geometry.dam_height_m`, `post_dam_weir_width_m`, `dam_settings.*` | Surface crest, active crest-transfer width, shallow under-dam K/K33 multipliers/mask, dam-toe sampling and pond storage-table resolution/extent. These do not directly simulate literal dam porosity or resolve flow inside a dam body. |
+| `geometry.dam_height_m`, `post_dam_weir_width_m`, `dam_settings.*` | Surface crest, active crest-transfer width, absolute isotropic under-dam K and component-wise midpoint halo/masks, dam-toe sampling and pond storage-table resolution/extent. These do not directly simulate literal dam porosity or resolve flow inside a dam body. |
 | Groundwater boundary controls | DRN discharge threshold or explicit constant GHB head relative to outlet bed, effective K and resistance length. Automatic boundary K follows K_constant even in by-layer/hydrofacies mode; set it explicitly when needed. |
 | `groundwater_edge_flux.*` | Signed total m³/day on the bottom-layer −x, +x and +y edges, uniformly distributed by length; default zero. Separate WEL packages preserve corner contributions; no automatic flow reduction. |
 | `external_outlet_height_above_bed_m` | Surface Manning invert above local outlet bed. Independent of groundwater levels and upstream flow; there is no hidden remote rating curve. |
@@ -434,5 +448,5 @@ Original names are preserved as viewer labels and as `original_name` in
 gaps. Summary columns append `_m`. Targets also record source, row, requested
 depth, derived elevation, resolved cell and resolved cell-center elevation.
 The omission report and metadata are also retained in the preparation manifest
-and standalone HDF5 handoff. Use fresh studies/preparation for registry v6 /
+and standalone HDF5 handoff. Use fresh studies/preparation for registry v7 /
 handoff v8; existing frozen studies retain their original sources and inputs.

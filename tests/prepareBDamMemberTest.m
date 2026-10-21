@@ -9,11 +9,11 @@ classdef prepareBDamMemberTest < matlab.unittest.TestCase
             config.groundwater_edge_flux=struct("x_min_m3_per_day",3, ...
                 "x_max_m3_per_day",-5,"y_max_m3_per_day",7);
             config.geometry.dam_height_m=0.5;
-            config.dam_settings.k_multiplier=1;
-            config.dam_settings.k33_multiplier=1;
+            config.dam_settings.under_dam_k_m_per_day=config.K_constant;
+            config.K33_constant=config.K_constant;
             config.groundwater_boundary_k_m_per_day=config.K_constant;
             config.K_by_layer_top_to_bottom=repmat(0.03,1,config.n_layers);
-            config.K33_by_layer_top_to_bottom=repmat(0.003,1,config.n_layers);
+            config.K33_by_layer_top_to_bottom=repmat(0.03,1,config.n_layers);
             config.source_root=root;
             config.source_geometry_file=fullfile(root,"Geometry","BDamGeometry.mat");
             config.usgs_hydrograph_file=fullfile(source,"usgs_13348000_hydrograph.csv");

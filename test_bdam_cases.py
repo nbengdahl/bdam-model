@@ -61,17 +61,33 @@ class ResolutionTests(unittest.TestCase):
 
     def test_removed_intermediate_controls_are_rejected(self):
         for name in ("initial_river_depth_above_outlet_bed_m", "pre_dam_outlet_width_m",
-                     "post_dam.initial_depth_above_dam_toe_m"):
+                     "post_dam.initial_depth_above_dam_toe_m",
+                     "dam_settings.k_multiplier", "dam_settings.k33_multiplier"):
             self.assertNotIn(name, SCHEMA["parameters"])
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "Unknown parameter"):
                 self.resolve({name: 1})
 
     def test_low_dam_and_unchanged_aquifer_treatment_resolve(self):
         cfg = self.resolve({"geometry.dam_height_m": 0.5,
-                            "dam_settings.k_multiplier": 1, "dam_settings.k33_multiplier": 1})
+                            "K33_constant": .03,
+                            "dam_settings.under_dam_k_m_per_day": .03, "dam_settings.leakage_halo_cells": 0})
         self.assertEqual(cfg["geometry"]["dam_height_m"], 0.5)
         with self.assertRaisesRegex(ValueError, "must be >"):
             self.resolve({"geometry.dam_height_m": 0})
+
+    def test_absolute_under_dam_conductivity_defaults_and_overrides(self):
+        self.assertEqual(self.resolve()['dam_settings']['under_dam_k_m_per_day'],1.)
+        self.assertEqual(self.resolve()['dam_settings']['leakage_halo_cells'],1)
+        shared={'dam_settings.under_dam_k_m_per_day':.2}
+        self.assertEqual(self.resolve({'dam_settings.under_dam_k_m_per_day':.5},shared)['dam_settings']['under_dam_k_m_per_day'],.5)
+        self.assertEqual(self.resolve({},shared)['dam_settings']['under_dam_k_m_per_day'],.2)
+        self.assertEqual(self.resolve({'K_constant':.7})['dam_settings']['under_dam_k_m_per_day'],1.)
+        for value in (0,-1,float('nan'),float('inf'),True,None,[1,2]):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.resolve({'dam_settings.under_dam_k_m_per_day':value})
+        for value in (-1,2,.5,True):
+            with self.subTest(halo=value), self.assertRaises(ValueError):
+                self.resolve({'dam_settings.leakage_halo_cells':value})
 
     def test_segment_counts_one_two_three(self):
         for n in (1,2,3):

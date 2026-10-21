@@ -79,7 +79,7 @@ def defaults(schema):
 
 def load_schema(source):
     schema=rt.read(Path(source)/"bdam_parameter_schema.json")
-    if schema.get("version")!="bdam-parameters-v6" or schema.get("defaults")!=defaults(schema):
+    if schema.get("version")!="bdam-parameters-v7" or schema.get("defaults")!=defaults(schema):
         raise ValueError("Unsupported or inconsistent parameter registry; regenerate its MATLAB defaults mirror.")
     return schema
 

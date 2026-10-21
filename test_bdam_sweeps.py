@@ -180,7 +180,7 @@ class CampaignTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'matrix'): expand(cfg,SCHEMA['scalar_defaults'])
 
     def test_frozen_manifest_has_explicit_version(self):
-        self.assertEqual(SCHEMA['version'], 'bdam-parameters-v6')
+        self.assertEqual(SCHEMA['version'], 'bdam-parameters-v7')
 
     def test_member_lock_and_slots_across_processes(self):
         with tempfile.TemporaryDirectory() as temp:

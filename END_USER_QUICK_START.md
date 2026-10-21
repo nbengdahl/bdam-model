@@ -14,6 +14,14 @@ This guide is for people preparing or inspecting simulations. Use
 
 ## Where defaults come from
 
+The independent isotropic under-dam conductivity is
+`dam_settings.under_dam_k_m_per_day`, default **1.0 m/day**. Background K does
+not scale it. The one-cell halo defaults on (`dam_settings.leakage_halo_cells=1`);
+use 0 to disable it. Halo K and K33 each average their own local background
+with the prescribed core K. At default background values they are 0.515 and
+0.5015 m/day. Regenerate inputs in a fresh study; old `k_multiplier` and
+`k33_multiplier` fields are rejected, with no automatic conversion.
+
 Scientific defaults live in `bdam_parameter_schema.json`, under `parameters`,
 in each field's `default` value. The [parameter reference](PARAMETER_REFERENCE.md)
 is the readable listing. A case inherits these defaults, then applies shared

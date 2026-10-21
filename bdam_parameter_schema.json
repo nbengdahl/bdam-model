@@ -1,5 +1,5 @@
 {
-  "version": "bdam-parameters-v6",
+  "version": "bdam-parameters-v7",
   "scalar_defaults": {
     "model_bottom_offset": 5.0,
     "n_layers": 5,
@@ -35,8 +35,6 @@
     "post_dam_weir_width_m": 2.0,
     "dam_settings.leakage_half_width_cells": 1,
     "dam_settings.leakage_n_top_layers": 3,
-    "dam_settings.k_multiplier": 5.0,
-    "dam_settings.k33_multiplier": 5.0,
     "dam_settings.stage_table_rows": 81,
     "dam_settings.max_lake_extent_height_above_weir_m": 0.5,
     "dam_settings.dam_line_sample_spacing_m": null,
@@ -69,7 +67,9 @@
     "mf6_parameters.spinup_max_weekly_years": 10,
     "mf6_parameters.spinup_head_relative_tolerance": 0.001,
     "mf6_parameters.spinup_stage_relative_tolerance": 0.01,
-    "mf6_parameters.spinup_water_content_relative_tolerance": 0.005
+    "mf6_parameters.spinup_water_content_relative_tolerance": 0.005,
+    "dam_settings.under_dam_k_m_per_day": 1.0,
+    "dam_settings.leakage_halo_cells": 1
   },
   "dependent_defaults": {
     "K_by_layer_top_to_bottom": "0.03 repeated n_layers times",
@@ -321,20 +321,6 @@
       "units": "count",
       "automatic": false,
       "minimum": 1
-    },
-    "dam_settings.k_multiplier": {
-      "default": 5.0,
-      "type": "number",
-      "units": "dimensionless",
-      "automatic": false,
-      "exclusive_minimum": 0
-    },
-    "dam_settings.k33_multiplier": {
-      "default": 5.0,
-      "type": "number",
-      "units": "dimensionless",
-      "automatic": false,
-      "exclusive_minimum": 0
     },
     "dam_settings.stage_table_rows": {
       "default": 81,
@@ -866,6 +852,21 @@
       "units": "dimensionless",
       "automatic": false,
       "exclusive_minimum": 0
+    },
+    "dam_settings.under_dam_k_m_per_day": {
+      "default": 1.0,
+      "type": "number",
+      "units": "m/day",
+      "automatic": false,
+      "exclusive_minimum": 0
+    },
+    "dam_settings.leakage_halo_cells": {
+      "default": 1,
+      "type": "integer",
+      "units": "count",
+      "automatic": false,
+      "minimum": 0,
+      "maximum": 1
     }
   },
   "defaults": {
@@ -911,11 +912,11 @@
     "dam_settings": {
       "leakage_half_width_cells": 1,
       "leakage_n_top_layers": 3,
-      "k_multiplier": 5.0,
-      "k33_multiplier": 5.0,
       "stage_table_rows": 81,
       "max_lake_extent_height_above_weir_m": 0.5,
-      "dam_line_sample_spacing_m": null
+      "dam_line_sample_spacing_m": null,
+      "under_dam_k_m_per_day": 1.0,
+      "leakage_halo_cells": 1
     },
     "forcing_controls": {
       "precipitation": {
