@@ -212,6 +212,8 @@ class BDamWorkflowTests(unittest.TestCase):
             self.assertEqual(stats["solver_variant"], "robust_initialization")
             self.assertEqual(stats["mf6_version"], "6.7.0")
             self.assertEqual(stats["outer_maximum"], 2000)
+            self.assertEqual(stats["lak_maximum_stage_change_m"], 5e-7)
+            self.assertLess(stats["lak_maximum_stage_change_m"], stats["inner_dvclose"])
             self.assertEqual(stats["time_step_count"], 2)
             self.assertEqual(stats["total_outer_iterations"], 3)
             self.assertEqual(stats["total_inner_iterations"], 9)

@@ -161,7 +161,7 @@ python3 --version
 python3 -m pip install --user -r requirements.txt
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  python3 -m unittest -v test_bdam_workflow.py
+  python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py test_lake_drying.py
 ```
 
 Install the requirements once for the selected `python3` and reuse that
@@ -537,7 +537,7 @@ automatically.
 | `k_multiplier` | 5.0 | ratio | Horizontal K multiplier inside the BDA treatment mask |
 | `k33_multiplier` | 5.0 | ratio | Vertical K multiplier inside the BDA treatment mask |
 | `dam_line_sample_spacing_m` | empty | m | Dam-toe sampling interval; empty uses one-quarter of minimum grid spacing |
-| `stage_table_rows` | 81 | rows | Resolution of post-dam stage–area–volume table; at least 3 |
+| `stage_table_rows` | 81 | samples | Base resolution of post-dam stage–area–volume table; at least 3; terrain breakpoints add rows |
 | `max_lake_extent_height_above_weir_m` | 0.50 | m | Highest connected upstream footprint represented above crest |
 | `initial_depth_above_dam_toe_m` | 1.0 | m | Legacy geometry preview only; the runner conserves pre-dam surface volume to initialize the pond |
 

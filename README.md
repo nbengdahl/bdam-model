@@ -162,10 +162,19 @@ Run the fast Python checks. These tests do not launch MODFLOW:
 
 ```zsh
 mkdir -p ../matplotlib-cache
-MPLCONFIGDIR=../matplotlib-cache python3 -m unittest -v test_bdam_workflow.py
+MPLCONFIGDIR=../matplotlib-cache python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py test_lake_drying.py
 ```
 
 ## Configure the simulation
+
+Regenerate geometry and both handoffs after updating this source. LAK storage
+tables must start at the lowest connected terrain elevation with zero volume
+and positive onset area. Pond tables include terrain breakpoints in addition
+to the configured base samples. The runner rejects trapped storage before
+starting MF6 and converts MF6 dry-stage flags to physical bed elevations for
+summaries and restarts, including dam installation.
+LAK's maximum stage change is `5e-7` m, shared with `parameters-table`;
+see [LAK validation](LAK_DRYING_VALIDATION.md) for numerical checks.
 
 The packaged terrain defaults define a 50-by-100-cell grid at 1 m spacing,
 with X transverse to the channel and Y along the channel. The centerline uses

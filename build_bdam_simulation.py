@@ -37,6 +37,10 @@ FLUX_OUTPUT = "bdam.fluxes.csv"
 SOLVER_OUTER_OUTPUT = "bdam.solver.outer.csv"
 SOLVER_INNER_OUTPUT = "bdam.solver.inner.csv"
 SOLVER_STATS_OUTPUT = "bdam.solver_stats.json"
+# MF6 also uses this LAK tolerance to set its finite-difference stage increment.
+# Its 1e-5 default can oscillate at the bed during evaporation-limited recession,
+# even with a valid zero-volume bottom. Keep the local solve tighter than IMS.
+LAK_STAGE_TOLERANCE = 5.0e-7
 SOLVER_PROFILES = {
     "balanced": "MODERATE",
     "conservative": "COMPLEX",
@@ -544,6 +548,53 @@ def _lake_data(h: Handoff, nlay: int, nrow: int) -> list[dict]:
     return lakes
 
 
+def _lake_bottoms(h: Handoff) -> np.ndarray:
+    """Minimum upper cell face of each lake's VERTICAL connections (MF6 LAKEBOT)."""
+    z = h.array("/grid/Z")
+    bottoms = []
+    for number in range(1, int(h.scalar("/surface_water/n_lakes")) + 1):
+        base = f"/surface_water/lakes/lake_{number}"
+        ix = h.array(base + "/connection_i_x", int).ravel() - 1
+        iy = h.array(base + "/connection_i_y", int).ravel() - 1
+        layer = h.array(base + "/connection_layer_native", int).ravel()
+        bottoms.append(float(np.min(z[ix, iy, layer])))
+    return np.asarray(bottoms)
+
+
+def _decode_lake_stages(h: Handoff, stages: np.ndarray) -> np.ndarray:
+    """Restore physical empty stages from DHDRY; reject inactive/invalid states."""
+    stages = np.asarray(stages, dtype=float).copy()
+    if stages.ndim < 1 or stages.shape[-1] != int(h.scalar("/surface_water/n_lakes")):
+        raise ValueError("Lake stage count does not match the handoff.")
+    dry = stages == -1.0e30
+    if np.any(~np.isfinite(stages)) or np.any((np.abs(stages) >= 1e20) & ~dry):
+        raise ValueError("Invalid or inactive lake stage; only MF6 DHDRY can represent an empty lake.")
+    if np.any(dry):
+        stages = np.where(dry, _lake_bottoms(h), stages)
+    return stages
+
+
+def _validate_lake_storage(h: Handoff, lakes: list[dict]) -> None:
+    """Reject trapped storage before starting a potentially long dry-out solve."""
+    top = h.array("/grid/ZTop")
+    for lake, bottom in zip(lakes, _lake_bottoms(h)):
+        table = lake["table"]
+        if table is None:
+            continue
+        if (np.any(~np.isfinite(table)) or np.any(table[:, 1:] < 0) or
+                np.any(np.diff(table[:, 0]) <= 0) or np.any(np.diff(table[:, 1]) <= 0) or
+                table[0, 0] != bottom or table[0, 1] != 0 or table[0, 2] <= 0):
+            raise ValueError(
+                f"Lake {lake['number']} must have zero volume and positive onset area at its "
+                "minimum VERTICAL connection stage, with increasing stage/volume. "
+                "Regenerate preparation with the current source."
+            )
+        mask = h.array(f"/surface_water/lakes/lake_{lake['number']}/storage_footprint_mask", bool)
+        if float(np.min(top[mask])) != bottom:
+            raise ValueError(f"Lake {lake['number']} stores water below its connected bed; "
+                             "this requires a different lake representation.")
+
+
 def _validate_lake_topology(h: Handoff, lakes: list[dict], top: np.ndarray) -> dict:
     """Reject ambiguous or physically misplaced LAK--GWF connections."""
     seen: dict[tuple[int, int, int], int] = {}
@@ -861,6 +912,11 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
 
     _validate_capped_lake_table(h, lakes)
     lake_topology_qa = _validate_lake_topology(h, lakes, top)
+    _validate_lake_storage(h, lakes)
+    if initial_lake_stages is not None:
+        initial_lake_stages = _decode_lake_stages(h, initial_lake_stages)
+        if np.any(initial_lake_stages < _lake_bottoms(h)):
+            raise ValueError("Initial lake stages lie below their VERTICAL connection beds.")
     land_mask, lake_mask = _atmospheric_masks(h, lakes, nrow, ncol)
     head_monitors = _monitoring(h, nlay, nrow, ncol, ws) if save_monitoring else []
     packagedata, connectiondata, tables = [], [], []
@@ -895,6 +951,7 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
                     float(widths[i]), float(rough[i]), float(slopes[i])) for i in range(len(lakes))]
     lak = flopy.mf6.ModflowGwflak(gwf, pname="LAK_MAIN", nlakes=len(lakes), noutlets=len(outlets), ntables=len(tables),
                                   packagedata=packagedata, connectiondata=connectiondata, tables=tables or None, outlets=outlets,
+                                  maximum_stage_change=LAK_STAGE_TOLERANCE,
                                   surfdep=h.scalar("/mf6_parameters/uzf_surfdep_m"),
                                   boundnames=True, save_flows=True, time_conversion=86400.0,
                                   stage_filerecord="bdam.lak.stage", budget_filerecord="bdam.lak.bud")
@@ -1019,6 +1076,7 @@ def _write_solver_stats(workspace: Path, solver_profile: str, ntrailwaves: int,
         "outer_dvclose": 1.0e-5,
         "inner_dvclose": 1.0e-6,
         "inner_rclose": 1.0e-6,
+        "lak_maximum_stage_change_m": LAK_STAGE_TOLERANCE,
         "rclose_option": "STRICT",
         "linear_acceleration": "BICGSTAB",
         "uzf_ntrailwaves": ntrailwaves,
@@ -1481,12 +1539,14 @@ def _period_rows(handoff: Handoff, run_workspace: Path, initial_heads: np.ndarra
     if stages is None:
         stages = np.asarray([handoff.scalar(f"/surface_water/lakes/lake_{number}/initial_stage_m")
                              for number in range(1, nlakes + 1)])
+    stages = _decode_lake_stages(handoff, stages)
     for number, stage in enumerate(stages, 1):
         first[f"lake{number}_stage_m"] = float(stage)
     rows = [first] if include_initial else []
     head_file = flopy.utils.HeadFile(run_workspace / "bdam.hds")
     cbc = flopy.utils.CellBudgetFile(run_workspace / "bdam.cbc", precision="double")
-    stages_by_time = _read_lake_stage_series(run_workspace / "bdam.lak.stage", nlakes)
+    stages_by_time = [(time, _decode_lake_stages(handoff, values))
+                      for time, values in _read_lake_stage_series(run_workspace / "bdam.lak.stage", nlakes)]
     times = np.asarray(head_file.get_times(), dtype=float)
     if len(times) != len(stages_by_time):
         raise RuntimeError("Head and LAK-stage output records do not match.")
@@ -1605,7 +1665,7 @@ def _read_final_state(handoff: Handoff, workspace: Path) -> tuple[np.ndarray, np
     try:
         return (
             flopy.utils.HeadFile(workspace / "bdam.hds").get_data(),
-            _read_mf6_array_last(workspace / "bdam.lak.stage", (nlak,)),
+            _decode_lake_stages(handoff, _read_mf6_array_last(workspace / "bdam.lak.stage", (nlak,))),
             _read_mf6_array_last(workspace / "bdam.uzf.wc", (nuzf,)),
         )
     except Exception as exc:
@@ -1699,6 +1759,7 @@ def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_fi
         raise RuntimeError("Final groundwater heads contain non-finite values.")
 
     stage_time, stages = _read_mf6_array_final(workspace / "bdam.lak.stage", (nlakes,))
+    stages = _decode_lake_stages(handoff, stages)
     wc_time, water_content = _read_mf6_array_final(workspace / "bdam.uzf.wc", (nuzf,))
     if not np.all(np.isfinite(stages)) or not np.all(np.isfinite(water_content)):
         raise RuntimeError("Final LAK or UZF restart state contains non-finite values.")
@@ -1848,7 +1909,7 @@ def _coarse_restart_stages(pre: Handoff, post: Handoff, stages: np.ndarray, work
     if stages is None:
         stages = np.array([pre.scalar(f"/surface_water/lakes/lake_{i}/initial_stage_m")
                            for i in range(1, int(pre.scalar("/surface_water/n_lakes")) + 1)])
-    stages = np.asarray(stages, dtype=float).ravel()
+    stages = _decode_lake_stages(pre, stages).ravel()
     if len(stages) != int(pre.scalar("/surface_water/n_lakes")) or np.any(~np.isfinite(stages)):
         raise ValueError("Invalid pre-dam restart stage count or values.")
     for i, stage in enumerate(stages, 1):
