@@ -36,6 +36,29 @@ carry exactly, and common UZF features map by groundwater cell. Saturated /
 inactive UZF zero sentinels restart at residual water content as required by MF6.
 `Runs/dam_installation_storage_audit.json` records the surface transfer.
 
+Pond tables start at the actual lowest connected terrain bed with zero volume
+and positive onset area. Terrain elevations supplement the configured
+`dam_settings.stage_table_rows` sampling, so exported tables may have more rows.
+Connected storage is recomputed at those elevations; the capped area and linear
+volume extension above the maximum footprint remain in effect. Preparation and
+the MF6 builder reject trapped storage or storage below the lowest connection.
+Regenerate old handoffs rather than editing their tables. MF6 dry stage values
+(`DHDRY`, −1e30 in binary stage output) become physical bed elevations in restart
+states and summaries, preserving zero volume through installation and spinup
+comparisons. Inactive lake sentinels remain errors.
+
+From a local copy with freshly prepared default `ModelInput`, run
+`python3 tools/verify_lake_drying.py /absolute/local/new-verification-folder`
+for bounded empty-state persistence, dry annual restart, conservative dry
+installation, rewetting and recession checks. Its three full-grid diagnostic
+solves retain the strict budget checks and produce no production receipt.
+Recession may leave trace storage within MF6's existing stage closure; it is
+preserved rather than rounded away. Exact zero-volume states remain reachable.
+LAK's internal `MAXIMUM_STAGE_CHANGE` is 1e-7 m, tighter than its MF6 default
+1e-5 m. MF6 derives its lake finite-difference increment from this tolerance;
+the smaller increment prevents the reproduced rapid-recession oscillation.
+IMS profiles/closures and budget tolerances are unchanged.
+
 Only the pond's upper banks are excluded from direct groundwater exchange:
 `pond_exchange_height_above_thalweg_m=1.25` m selects its connection footprint.
 Full connected DEM topography supplies pond storage; downstream river exchange

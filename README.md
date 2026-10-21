@@ -22,6 +22,7 @@ framework with synthetic forcing and assumed material properties.
 | Python, CSV/JSON or MATLAB case tables; successive optimizer batches | [Parameter-table interface](PARAMETERS.md) |
 | Every accepted scientific field, default, type and unit | [Parameter reference](PARAMETER_REFERENCE.md) |
 | River geometry, storage, routing and interpretation | [River formulation](RIVER_REFINEMENTS.md) |
+| Dry lake geometry, restarts and numerical regression | [LAK dry-out validation](LAK_DRYING_VALIDATION.md) |
 | Groundwater edge fluxes, DRN/GHB and surface outlet | [Boundary contract](BOUNDARY_ASSUMPTIONS.md) |
 | Automated agents modifying or running the model | [Agent runbook](AGENTS.md) |
 | Monitoring CSV contract and verification | [Monitoring validation](MONITORING_VALIDATION.md) |

@@ -33,6 +33,30 @@ classdef prepareBDamMemberTest < matlab.unittest.TestCase
             testCase.verifyEqual(h5read(post,"/properties/K/data"),h5read(post,"/properties/K_background/data"));
             testCase.verifyEqual(h5read(post,"/properties/K33/data"),h5read(post,"/properties/K33_background/data"));
             testCase.verifyEqual(h5read(post,"/surface_water/n_lakes/data"),3);
+            top=h5read(post,"/grid/ZTop/data");
+            mask=logical(h5read(post,"/surface_water/lakes/lake_1/storage_footprint_mask/data"));
+            exchange=logical(h5read(post,"/surface_water/lakes/lake_1/footprint_mask/data"));
+            stage=h5read(post,"/surface_water/lakes/lake_1/stage_area_volume/stage_m/data");
+            volume=h5read(post,"/surface_water/lakes/lake_1/stage_area_volume/volume_m3/data");
+            area=h5read(post,"/surface_water/lakes/lake_1/stage_area_volume/area_m2/data");
+            terrain=top(mask);
+            testCase.verifyEqual(stage(1),min(top(exchange)));
+            testCase.verifyEqual(volume(1),0);
+            testCase.verifyGreaterThan(area(1),0);
+            testCase.verifyTrue(all(diff(volume)>0));
+            testCase.verifyTrue(all(ismember(unique(terrain),stage)));
+            % The default cell area is 1 m2. Disconnected pockets need not
+            % contribute at intermediate stages, but the first bed interval
+            % has exactly the storage of its lowest terrain cells.
+            for q=1:numel(stage)
+                expected=sum(max(stage(q)-terrain,0));
+                testCase.verifyLessThanOrEqual(volume(q),expected+1e-9);
+            end
+            mid=(stage(1)+stage(2))/2;
+            testCase.verifyEqual(interp1(stage,volume,mid), ...
+                sum(max(mid-terrain,0)),AbsTol=1e-12);
+            cap=h5read(post,"/surface_water/dam/maximum_lake_extent_stage_m/data");
+            testCase.verifyEqual(area(stage>=cap),repmat(nnz(mask),nnz(stage>=cap),1));
         end
     end
 end

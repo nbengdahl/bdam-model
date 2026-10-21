@@ -2,6 +2,23 @@
 
 ## parameters-table (unreleased)
 
+### Reachable dry pond and dry-state restarts — 2026-10-21
+
+- Recompute pond storage at terrain elevations and start the table at the
+  actual connected bed with zero volume. Retain connected DEM storage and the
+  capped upper footprint; configured table rows are supplemented by terrain knots.
+- Reject inconsistent dry-bottom geometry before MF6 runs. Old handoffs with
+  trapped pond storage require fresh preparation.
+- Decode MF6's dry lake sentinel into its physical empty stage for annual and
+  installation restarts, summaries, retained states and spinup comparisons;
+  reject inactive/invalid lake stages.
+- Add geometry/decoding/conservation regressions and a three-solve full-grid
+  drying, rewetting and dry-restart verifier (`tools/verify_lake_drying.py`).
+- Tighten only LAK's internal stage tolerance from its MF6 default 1e-5 m to
+  1e-7 m; the associated smaller finite-difference increment resolves the
+  separately reproduced evaporation-limited recession oscillation. Record it
+  in solver statistics. IMS, budget limits and production calendars are unchanged.
+
 ### Dam height parameter name — 2026-10-16
 
 - Name the dam height input `geometry.dam_height_m` consistently in source, defaults,

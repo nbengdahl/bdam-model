@@ -262,6 +262,14 @@ end
 all_lake_mask = false(nx, ny);
 lake_connection_count = zeros(nx, ny);
 for i_lake = 1:numel(lakes)
+    lake = lakes(i_lake);
+    bed = min(lake.land_elevation_m);
+    curve = lake.stage_area_volume;
+    assert(min(ZTop(lake.storage_footprint_mask)) == bed && ...
+        curve.stage_elevation_m(1) == bed && curve.volume_m3(1) == 0, ...
+        "BDam:LakeDryBottom", ...
+        "Lake %d must have zero storage at its lowest VERTICAL connection; " + ...
+        "storage below the connected bed requires a different lake representation.",i_lake);
     all_lake_mask = all_lake_mask | lakes(i_lake).footprint_mask;
     lake_connection_count = lake_connection_count + double(lakes(i_lake).footprint_mask);
 end
@@ -573,7 +581,16 @@ function [curve,maximum_mask] = makeStageAreaVolume(ZTop, upstream, distance, dx
     base_stage=linspace(dam.toe_elevation_m,dam.maximum_lake_extent_stage_m,n_base)';
     extended_stage=linspace(dam.maximum_lake_extent_stage_m,dam.stage_table_maximum_m, ...
         dam.stage_table_rows-n_base+1)';
-    stage=[base_stage;extended_stage(2:end)]; n=numel(stage); cap_index=n_base;
+    maximum_mask=connectedPondMask(ZTop,upstream,distance,dx,dy,dam.maximum_lake_extent_stage_m);
+    assert(any(maximum_mask,"all"),"Upstream storage footprint is empty.");
+    bed=min(ZTop(maximum_mask));
+    % VERTICAL LAK connections cannot fall below their lowest terrain cell.
+    % Include every DEM break point so interpolation cannot invent storage
+    % between a lower sampled dam toe and the actual pond bed. The configured
+    % sampling remains as additional resolution, not a limit on terrain knots.
+    base_stage=unique([base_stage(base_stage>=bed);ZTop(maximum_mask); ...
+        dam.maximum_lake_extent_stage_m]);
+    stage=[base_stage;extended_stage(2:end)]; n=numel(stage); cap_index=numel(base_stage);
     area=zeros(n,1); volume=area; count=zeros(n,1); edge=false(n,1); masks=cell(n,1);
     for q=1:cap_index
         masks{q}=connectedPondMask(ZTop,upstream,distance,dx,dy,stage(q)); count(q)=nnz(masks{q}); area(q)=count(q)*dx*dy;
@@ -584,7 +601,8 @@ function [curve,maximum_mask] = makeStageAreaVolume(ZTop, upstream, distance, dx
         masks{q}=maximum_mask; count(q)=count(cap_index); area(q)=maximum_area;
         volume(q)=maximum_volume+maximum_area*(stage(q)-stage(cap_index)); edge(q)=edge(cap_index);
     end
-    assert(all(diff(stage)>0) && all(diff(volume)>=0) && all(area(cap_index:end)==maximum_area), ...
+    assert(stage(1)==bed && volume(1)==0 && area(1)>0 && ...
+        all(diff(stage)>0) && all(diff(volume)>0) && all(area(cap_index:end)==maximum_area), ...
         "Lake table must have increasing stage/volume and constant capped area.");
     curve=table(stage,stage-dam.toe_elevation_m,area,volume,count,edge,stage>dam.maximum_lake_extent_stage_m, ...
         VariableNames=["stage_elevation_m","stage_above_toe_m","area_m2","volume_m3","cell_count","touches_domain_edge","above_maximum_extent"]);
