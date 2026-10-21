@@ -533,13 +533,26 @@ automatically.
 | Input | Default | Units | Meaning and requirement |
 |---|---:|---|---|
 | `leakage_half_width_cells` | 1 | cells | Half-width of the channel-centered under-dam property band |
-| `leakage_n_top_layers` | 3 | layers | Number of shallow groundwater layers receiving BDA multipliers |
-| `k_multiplier` | 5.0 | ratio | Horizontal K multiplier inside the BDA treatment mask |
-| `k33_multiplier` | 5.0 | ratio | Vertical K multiplier inside the BDA treatment mask |
+| `leakage_n_top_layers` | 3 | layers | Number of shallow groundwater layers receiving the core and halo treatment |
+| `under_dam_k_m_per_day` | 1.0 | m/day | Independent uniform isotropic core K and K33; finite and positive |
+| `leakage_halo_cells` | 1 | cells | 0 or 1; eight-neighbor plan-view expansion in the same treated layers |
 | `dam_line_sample_spacing_m` | empty | m | Dam-toe sampling interval; empty uses one-quarter of minimum grid spacing |
 | `stage_table_rows` | 81 | samples | Base resolution of post-dam stage–area–volume table; at least 3; terrain breakpoints add rows |
 | `max_lake_extent_height_above_weir_m` | 0.50 | m | Highest connected upstream footprint represented above crest |
 | `initial_depth_above_dam_toe_m` | 1.0 | m | Legacy geometry preview only; the runner conserves pre-dam surface volume to initialize the pond |
+
+The core is isotropic: both K and K33 equal `under_dam_k_m_per_day`,
+independently of local background properties. The halo follows the actual core footprint,
+including diagonal neighbors and cells outside the channel; its count varies
+with dam placement. Halo K and K33 each lie halfway between their own local
+background and that scalar treatment value. With current defaults, the core
+has K = K33 = 1.0 m/day; the halo has K = 0.515 and K33 = 0.5015 m/day.
+Values below, equal to or above background are permitted. The obsolete
+`k_multiplier` and `k33_multiplier` settings are no longer accepted.
+Setting `leakage_halo_cells` to zero disables the halo while retaining the
+isotropic core. Regenerate the paired handoffs after changes; old v6 handoffs
+continue to use their stored original arrays. The halo does not alter LAK
+footprints or lakebed conductivity.
 
 The BDA leakage mask changes aquifer K and K33. It does not switch LAK–GWF
 coupling on or off. Every fixed lake-footprint cell receives a separate
@@ -584,7 +597,8 @@ All have MATLAB shape `[nx,ny]` unless noted.
 | `ZBot` | Groundwater-model bottom elevation |
 | `channel_mask` | Channel cells based on each cross-section's local terrain minimum |
 | Lake footprint masks | Fixed cells connected vertically to each LAK feature |
-| `BDA_LEAKAGE_FOOTPRINT` | Plan-view under-dam K/K33 treatment cells; post-dam only |
+| `BDA_LEAKAGE_FOOTPRINT` | Union of core and halo plan-view treatment cells; post-dam only |
+| `BDA_LEAKAGE_CORE_FOOTPRINT`, `BDA_LEAKAGE_HALO_FOOTPRINT` | Separate disjoint plan-view regions |
 | Upstream/downstream masks | Validation and cross-dam flow zones |
 | Land/lake atmosphere masks | Exclusive assignment of UZF versus LAK atmospheric forcing |
 | UZF start-layer map | First eligible UZF layer at each horizontal cell |
@@ -599,10 +613,11 @@ These have MATLAB shape `[nx,ny,n_layers]`, except `Z`, which has
 | `Z` | Bottom-to-top layer-interface elevations |
 | `ZCell` | Cell-center elevation in every groundwater layer |
 | `K_background`, `K33_background` | Pre-treatment horizontal and vertical conductivity |
-| `K`, `K33` | Scenario conductivity after any BDA multipliers |
+| `K`, `K33` | Scenario conductivity after the absolute core and midpoint halo treatment |
 | `Sy`, `Ss` | Specific-yield and specific-storage tensors |
 | `Porosity` | Effective-porosity tensor |
-| `BDA_LEAKAGE_MASK` | Three-dimensional under-dam treatment zone |
+| `BDA_LEAKAGE_MASK` | Union of three-dimensional core and halo masks |
+| `BDA_LEAKAGE_CORE_MASK`, `BDA_LEAKAGE_HALO_MASK` | Separate masks through the configured top layers |
 | Downstream groundwater mask | Groundwater cells assigned to the local outlet boundary |
 | UZF eligibility mask | Layers allowed to contain UZF features |
 

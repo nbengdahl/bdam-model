@@ -9,6 +9,18 @@ calculation are unchanged.
 
 ## River formulation (v0.2.1)
 
+The under-dam conductivity core is isotropic at the independent
+`dam_settings.under_dam_k_m_per_day` (default 1.0 m/day), regardless of background
+K. A one-cell plan-view halo (including diagonal
+neighbors) occupies the same treated layers, with each K/K33 component halfway
+between its local background and the scalar core-treatment value. Set
+`leakage_halo_cells = 0` in MakeInputs to disable the halo. Regenerate both
+handoffs after changing these settings. Existing v6 handoffs retain their
+original conductivity arrays.
+See [absolute-K validation](UNDER_DAM_K_VALIDATION.md) for the current default
+and both branches. The [historical halo comparison](CONDUCTIVITY_HALO_VALIDATION.md)
+used the earlier 0.15 m/day core.
+
 The default uses coarse Manning-connected LAK river pools: eight before the dam,
 then one pond and two downstream pools on the default terrain. Upper pond banks
 are excluded from groundwater exchange, while full connected topography supplies

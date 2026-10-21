@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — independent under-dam conductivity, 2026-10-21
+
+- Replace conductivity multipliers with `dam_settings.under_dam_k_m_per_day`,
+  a positive absolute isotropic conductivity defaulting to 1.0 m/day.
+- Keep each halo component halfway between its local background and the
+  prescribed core K. Preserve the earlier 0.15 m/day comparison as history.
+
+## Unreleased — under-dam conductivity halo, 2026-10-21
+
+- Make the existing under-dam core isotropic at its horizontal treatment K.
+  Replace the separate `k33_multiplier` setting with `leakage_halo_cells`.
+- Add an eight-neighbor, one-cell plan-view halo in the same treated layers.
+  Interpolate each halo conductivity component halfway between its local
+  background and the scalar treatment value; preserve background elsewhere.
+- Export disjoint core/halo audit masks alongside the existing union masks,
+  retaining v6 handoff compatibility and the merged upstream pond.
+- Add helper tests, prepared/serialized array validation and three-case
+  comparison evidence in `CONDUCTIVITY_HALO_VALIDATION.md`.
+
 ## Dam height parameter name — 2026-10-16
 
 - Name the dam height input `dam_height_m` consistently in source, defaults,
