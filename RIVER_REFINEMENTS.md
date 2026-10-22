@@ -29,6 +29,21 @@ do not lower that outlet. The external outlet retains the independent local-bed
 control; the pond weir retains the crest. The table interface currently supports
 positive longitudinal slopes and minimum-Y downstream geometry only.
 
+The runner delivers each internal outlet's discharge through MVR FACTOR 1,
+with its native LAK receiver set to external, and preserves the physical chain
+in `bdam.lake_routing.json`. This makes received water available consistently
+to the lake solve and residual check in MF6 6.7.0. The final surface outlet
+has no mover receiver. Native `outletN_flow` observations retain their hydraulic
+outlet meaning; MVR records give the transferred rate. The small signed
+difference after MF6's final outlet update remains in the external budget,
+including inward residuals. The per-internal-outlet limit is 1e-4 m³/day;
+debit/credit agreement remains 1e-8 m³/day. No residual is rounded away.
+
+Every lake's native budget is checked using the existing 0.1% criterion with
+an explicit 1e-8 m³/day absolute criterion at near-zero flow. Both absolute
+and relative residuals are reported. This avoids interpreting roundoff at an
+empty pool as a large physical imbalance. See `MVR_ROUTING_VALIDATION.md`.
+
 Every pool initializes 0.10 m above its own lowest bed. The post-dam pond's
 preparation seed is internal; actual installation conserves inherited pre-dam
 surface volume and maps it into the post-dam storage tables. Groundwater heads
@@ -54,10 +69,17 @@ installation, rewetting and recession checks. Its three full-grid diagnostic
 solves retain the strict budget checks and produce no production receipt.
 Recession may leave trace storage within MF6's existing stage closure; it is
 preserved rather than rounded away. Exact zero-volume states remain reachable.
-LAK's internal `MAXIMUM_STAGE_CHANGE` is 1e-7 m, tighter than its MF6 default
+LAK's internal `MAXIMUM_STAGE_CHANGE` is 5e-7 m, tighter than its MF6 default
 1e-5 m. MF6 derives its lake finite-difference increment from this tolerance;
 the smaller increment prevents the reproduced rapid-recession oscillation.
 IMS profiles/closures and budget tolerances are unchanged.
+
+`tools/verify_lake_mover_drying.py` adds bounded wet-to-bed recession,
+upstream-to-downstream rewetting, mixed wet/dry neighbors and inherited-state
+restarts for every pre/post lake. It preserves trace water within the existing
+stage tolerance. The original verifier separately requires genuine exact-zero
+and DHDRY states through dry restart and installation. These diagnostic
+calendars and extreme evaporation stressors never modify production forcing.
 
 Only the pond's upper banks are excluded from direct groundwater exchange:
 `pond_exchange_height_above_thalweg_m=1.25` m selects its connection footprint.

@@ -14,6 +14,14 @@ This guide is for people preparing or inspecting simulations. Use
 
 ## Where defaults come from
 
+The current runner routes internal lake outlets through MF6 MVR while preserving
+their hydraulic controls. `bdam.lake_routing.json`, `bdam.mvr.bud` and
+`bdam.lake_routing_balance.csv` audit the topology and actual transfers.
+Signed numerical residual flows are retained in the external water balance;
+their per-outlet acceptance tolerance is 1e-4 m³/day. MF6 convergence and the
+existing 0.1% system budget limits are unchanged. Start a fresh study when
+updating the runner. See [routing validation](MVR_ROUTING_VALIDATION.md).
+
 The independent isotropic under-dam conductivity is
 `dam_settings.under_dam_k_m_per_day`, default **1.0 m/day**. Background K does
 not scale it. The one-cell halo defaults on (`dam_settings.leakage_halo_cells=1`);

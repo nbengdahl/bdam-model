@@ -40,6 +40,14 @@ dated evidence, not current configuration instructions.
    diagnose source defects within the authorized task, but do not relax validation
    or physical assumptions to obtain a pass.
 
+Internal lake routing uses MVR (Candidate 1) with unchanged hydraulic controls.
+Require `bdam.lake_routing.json`, `bdam.mvr.bud` when links exist, and
+`bdam.lake_routing_balance.csv`. MVR debit/credit tolerance is 1e-8 m3/day;
+the user-selected signed external residual limit is 1e-4 m3/day per internal
+outlet. Preserve those residuals in the gross external balance. Per-lake checks
+use 0.1% or 1e-8 m3/day absolute closure near zero; whole-system limits and
+LAK/IMS controls are unchanged. Revalidation must not rewrite completed audits.
+
 ## Source map and edit boundaries
 
 | Area | Owners |

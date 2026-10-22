@@ -2,6 +2,18 @@
 
 ## parameters-table (unreleased)
 
+### MVR receiving-lake routing repair — 2026-10-22
+
+- Use stock MF6 MVR for internal lake transfers, preserving all Manning/WEIR
+  controls, lake storage and the independent terminal outlet. Fix the reproduced
+  pre-dam April receiving-lake availability/residual failure.
+- Add explicit routing metadata, native MVR debit/credit validation, per-lake
+  budgets and an audit CSV. Retain signed external residuals with the user-selected
+  1e-4 m³/day per-outlet acceptance tolerance. Keep transfer agreement at 1e-8
+  m³/day and existing solver/system-budget controls unchanged.
+- Add all-lake recession, rewetting, mixed-state and restart stress regressions.
+  Keep registry v7 and HDF5 v8; fresh studies capture the updated runner.
+
 ### Independent under-dam K and one-cell halo — 2026-10-21
 
 - Use `dam_settings.under_dam_k_m_per_day` (default 1 m/day) for a uniform

@@ -32,6 +32,14 @@ framework with synthetic forcing and assumed material properties.
 
 ## Current defaults
 
+Internal lake transfers use stock MF6 MVR (Candidate 1), preserving the existing
+Manning/WEIR controls and independent terminal outlet. This fixes the reproduced
+receiving-lake availability failure in MF6 6.7.0. Signed final-update residuals
+remain in the external balance, with a 1e-4 m³/day per-internal-outlet audit;
+transfer debit/credit checks remain 1e-8 m³/day. See
+[routing validation](MVR_ROUTING_VALIDATION.md). Use a fresh study to adopt it;
+existing frozen studies retain their sources and results.
+
 The under-dam core has independent isotropic conductivity
 `dam_settings.under_dam_k_m_per_day = 1.0` m/day. A one-cell plan-view halo
 (`dam_settings.leakage_halo_cells = 1`, or 0 to disable) follows its actual
