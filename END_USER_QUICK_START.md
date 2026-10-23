@@ -9,6 +9,17 @@ calculation are unchanged.
 
 ## River formulation (v0.2.1)
 
+Internal lake outlets use stock MF6 MVR to supply receiving-lake water
+consistently during evaporation-limited recession. Manning/WEIR controls and
+the terminal surface outlet retain their existing physical definitions.
+Each workspace includes `bdam.lake_routing.json`, `bdam.lake_routing_balance.csv`
+and, when internal links exist, `bdam.mvr.bud`. The MVR debit/credit limit is
+1e-8 m3/day. The approved final-update external-residual limit is 1e-4 m3/day
+per internal outlet; both signs are included in gross external balances.
+Per-lake closure uses 0.1% relative or 1e-8 m3/day absolute closure near zero.
+Whole-system 0.1% checks, LAK tolerance and solver settings are unchanged.
+See [routing validation](MVR_ROUTING_VALIDATION.md).
+
 The default uses coarse Manning-connected LAK river pools: eight before the dam,
 then one pond and two downstream pools on the default terrain. Upper pond banks
 are excluded from groundwater exchange, while full connected topography supplies
@@ -161,7 +172,7 @@ python3 --version
 python3 -m pip install --user -r requirements.txt
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py test_lake_drying.py
+  python3 -m unittest discover -v -p 'test_*.py'
 ```
 
 Install the requirements once for the selected `python3` and reuse that
@@ -184,7 +195,7 @@ Review the MATLAB figures and console summaries. Confirm at least:
 - the river follows the long Y axis;
 - channel and lake masks occupy the expected cells;
 - the dam crosses the channel at the intended station;
-- both post-dam lakes exist and do not overlap;
+- the post-dam pond and two downstream pools exist and do not overlap;
 - the downstream groundwater boundary lies on the low-elevation model edge;
 - layer-1 UZF is absent beneath fixed LAK footprints;
 - post-dam BDA K/K33 changes are limited to the intended under-dam band.
@@ -213,9 +224,9 @@ MPLCONFIGDIR=../matplotlib-cache PYTHONUNBUFFERED=1 \
   --staging-root ../staging 2>&1 | tee ../model_runner.log
 ```
 
-The default sequence is one 7-day relaxation at September--November-average
-forcing, one fall-average spinup year, one monthly spinup year, one weekly spinup year, one
-monitored pre-dam year, and one monitored post-dam year. The relaxation runs
+The default sequence is four monthly spinup years, one weekly spinup year,
+two monitored pre-dam years and two monitored post-dam years. The first monthly
+year uses the conservative profile; the remaining years use balanced. The relaxation runs
 only when at least one fall-average spinup year is configured, and its final
 groundwater, lake, and UZF state initializes the fall-average year. A quiet
 terminal is normal because MF6 output is captured. Live progress is written to
@@ -253,11 +264,12 @@ allocation from roughly 11 GB to 286--289 MB. Runtime varies by computer.
 A successful default run contains:
 
 ```text
-Runs/spinup/initial_relaxation/
 Runs/spinup/first_annual/
 Runs/spinup/staged/
 Runs/pre_dam/year_01/
+Runs/pre_dam/year_02/
 Runs/post_dam/year_01/
+Runs/post_dam/year_02/
 Runs/spinup_summary.csv
 Runs/weekly_summary.csv
 ```
@@ -268,10 +280,17 @@ LAK, and UZF binary outputs, the configured final saved time, and
 `bdam.solver_stats.json` with normal termination. The runner enforces these
 requirements before publishing a workspace.
 
+The first monthly year has 12 saved endpoints at day 365, the staged remainder
+has 88 endpoints at day 1460, and each monitored year has 52 endpoints at day
+365. The default totals 308 endpoints; no initial relaxation is configured.
+Run viewer tests with `BDAM_TEST_OUTPUT_ROOT` set to this completed package
+root to exercise actual-output loading and animation as well as synthetic tests.
+
 The Results Viewer intentionally starts the Spinup timeline with the
-post-relaxation state in `Runs/spinup/first_annual`, continues through
-`Runs/spinup/staged`, and keeps the separately validated `initial_relaxation`
-workspace available for audit.
+initial state in `Runs/spinup/first_annual` and continues through
+`Runs/spinup/staged`. If fall-average spinup is explicitly enabled, this
+initial state follows the separately validated relaxation; its
+`initial_relaxation` workspace remains available for audit.
 
 ## Graphical terrain application
 
@@ -752,12 +771,12 @@ when spatial detail is needed.
   from layer-1 UZF even when some cells are above the current lake stage.
 - The BDA leakage mask changes shallow aquifer K and K33; it is not the LAK
   coupling mask.
-- Pre-dam output uses one river LAK. Its exchange is divided at the reference
-  dam line in summaries so Lake 1/Lake 2 columns remain comparable across the
-  dam-installation transition.
-- At installation, groundwater heads are preserved, common UZF water content
-  is mapped by cell, and both post-dam lakes inherit the final pre-dam river
-  stage.
+- Pre-dam output uses eight pools on the default terrain. Their exchange is
+  aggregated geographically at the dam line so upstream/downstream exchange
+  totals remain comparable across installation; individual lake IDs change.
+- At installation, groundwater heads are preserved and common UZF water
+  content is mapped by cell. The pond stage conserves merged upstream volume;
+  downstream pools inherit their corresponding stages and volumes.
 - Existing nonempty `Runs` are renamed to a timestamped backup rather than
   overwritten. Repeated runs can consume substantial disk space.
 

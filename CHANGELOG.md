@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — receiving-lake MVR routing repair, 2026-10-22
+
+- Port Candidate 1 from `parameters-table` to the single-run workflow, retaining
+  schema v6 and existing physical inputs. Use stock MF6 MVR for internal lake
+  transfers with unchanged hydraulic controls and terminal outlet.
+- Audit routing serialization, every MVR debit/credit and each lake's balance.
+  Apply the approved 1e-4 m3/day internal-outlet external-residual limit and
+  retain signed residuals in gross external budgets. Transfer conservation
+  remains 1e-8 m3/day; whole-system and solver tolerances are unchanged.
+- Add all-lake depletion/rewetting and read-only completed-audit regressions.
+  Validation evidence is recorded in `MVR_ROUTING_VALIDATION.md`.
+
 ## Unreleased — independent under-dam conductivity, 2026-10-21
 
 - Replace conductivity multipliers with `dam_settings.under_dam_k_m_per_day`,

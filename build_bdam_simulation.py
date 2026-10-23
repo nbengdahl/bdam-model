@@ -723,6 +723,44 @@ def validate_lak_outlet_routes(lak_path: Path) -> None:
         if len(fields) < 3:
             raise ValueError(f"{lak_path}: malformed LAK outlet record: {line!r}")
         actual.append(tuple(map(int, fields[:3])))
+    routing_path = lak_path.parent / "bdam.lake_routing.json"
+    if routing_path.is_file():
+        routing = _read_lake_routing(lak_path.parent)
+        expected = [(r["outlet"], r["provider"], 0) for r in routing["outlets"]]
+        if actual != expected:
+            raise ValueError(f"{lak_path}: serialized outlets disagree with MVR routing: {actual} != {expected}.")
+        written = [line.split() for line in lines[begin + 1:end] if line.strip()]
+        for fields, control in zip(written, routing["outlets"]):
+            if (len(fields) != 8 or fields[3].upper() != control["type"].upper() or
+                    not np.allclose(np.asarray(fields[4:], dtype=float),
+                        [control[k] for k in ("invert", "width", "roughness", "slope")],
+                        atol=1e-12, rtol=0)):
+                raise ValueError(f"{lak_path}: serialized hydraulic control changed.")
+        links = [r for r in routing["outlets"] if r["receiver"]]
+        if links:
+            if not any(line.strip().upper() == "MOVER" for line in lines):
+                raise ValueError(f"{lak_path}: internal transfers require LAK MOVER.")
+            mvr_path = lak_path.parent / "bdam.mvr"
+            records, in_period = [], False
+            for line in mvr_path.read_text().splitlines():
+                fields = line.split()
+                if not fields or fields[0].startswith("#"):
+                    continue
+                if fields[0].upper() == "BEGIN" and fields[1].upper() == "PERIOD":
+                    if fields[2] != "1":
+                        raise ValueError("Lake routing must remain constant across periods.")
+                    in_period = True
+                elif fields[0].upper() == "END":
+                    in_period = False
+                elif in_period:
+                    records.append(fields)
+            expected_mvr = [("LAK_MAIN", r["outlet"], "LAK_MAIN", r["receiver"], "FACTOR", 1.0)
+                            for r in links]
+            parsed = [(f[0].upper(), int(f[1]), f[2].upper(), int(f[3]), f[4].upper(), float(f[5]))
+                      for f in records if len(f) == 6]
+            if len(parsed) != len(records) or parsed != expected_mvr:
+                raise ValueError(f"{mvr_path}: missing, duplicated or misrouted lake transfer.")
+        return
     expected_by_count = {
         1: [(1, 1, 0)],             # pre-dam lake -> external boundary
         2: [(1, 1, 2), (2, 2, 0)], # upstream lake -> downstream lake -> external boundary
@@ -733,6 +771,37 @@ def validate_lak_outlet_routes(lak_path: Path) -> None:
         raise ValueError(f"{lak_path}: expected a nonempty linear outlet chain, found {len(actual)}.")
     if actual != expected:
         raise ValueError(f"{lak_path}: invalid LAK outlet routing {actual}; expected {expected}.")
+
+
+def _read_lake_routing(workspace: Path) -> dict:
+    """Read the explicit physical chain, independently of its MVR serialization."""
+    routing = json.loads((Path(workspace) / "bdam.lake_routing.json").read_text())
+    count = routing.get("n_lakes")
+    outlets = routing.get("outlets", [])
+    if (routing.get("version") != 1 or not isinstance(count, int) or count < 1 or
+            len(outlets) != count or
+            [(r["outlet"], r["provider"], r["receiver"]) for r in outlets] !=
+            [(i, i, i + 1 if i < count else 0) for i in range(1, count + 1)]):
+        raise ValueError("Invalid physical lake routing manifest.")
+    return routing
+
+
+def _build_lake_mover(gwf, outlets: list[tuple], n_lakes: int, workspace: Path) -> list[tuple]:
+    """Route each internal control through stock MVR without changing its law."""
+    records = [dict(outlet=int(r[0]) + 1, provider=int(r[1]) + 1,
+                    receiver=int(r[2]) + 1, type=r[3], invert=float(r[4]),
+                    width=float(r[5]), roughness=float(r[6]), slope=float(r[7])) for r in outlets]
+    routing = dict(version=1, n_lakes=n_lakes, method="MVR", outlets=records)
+    (workspace / "bdam.lake_routing.json").write_text(json.dumps(routing, indent=2) + "\n")
+    _read_lake_routing(workspace)
+    links = [r for r in records if r["receiver"]]
+    if links:
+        flopy.mf6.ModflowGwfmvr(gwf, pname="MVR_LAKES", maxmvr=len(links), maxpackages=1,
+            packages=[("LAK_MAIN",)], budget_filerecord="bdam.mvr.bud",
+            perioddata={0: [("LAK_MAIN", r["outlet"] - 1, "LAK_MAIN", r["receiver"] - 1, "FACTOR", 1.0)
+                            for r in links]})
+    # lakeout=0 in MF6; the MVR transfer is the only internal credit.
+    return [(r[0], r[1], -1, *r[3:]) for r in outlets]
 
 
 def _ts(package, filename: str, names: list[str], time: np.ndarray, columns: list[np.ndarray]) -> None:
@@ -949,8 +1018,11 @@ def build_from_handoff(h5_path: str | Path, workspace: str | Path, scenario: str
         outlets = [(i, i, i + 1 if i + 1 < len(lakes) else -1,
                     {1: "MANNING", 2: "WEIR"}[int(codes[i])], float(inverts[i]),
                     float(widths[i]), float(rough[i]), float(slopes[i])) for i in range(len(lakes))]
+    has_internal_transfers = any(r[2] >= 0 for r in outlets)
+    outlets = _build_lake_mover(gwf, outlets, len(lakes), ws)
     lak = flopy.mf6.ModflowGwflak(gwf, pname="LAK_MAIN", nlakes=len(lakes), noutlets=len(outlets), ntables=len(tables),
                                   packagedata=packagedata, connectiondata=connectiondata, tables=tables or None, outlets=outlets,
+                                  mover=has_internal_transfers,
                                   maximum_stage_change=LAK_STAGE_TOLERANCE,
                                   surfdep=h.scalar("/mf6_parameters/uzf_surfdep_m"),
                                   boundnames=True, save_flows=True, time_conversion=86400.0,
@@ -1298,7 +1370,8 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
         lake_rain = _budget_sum_at_time(lak_budget, "RAINFALL", time)
         lake_evap = -_budget_sum_at_time(lak_budget, "EVAPORATION", time)
         lake_external_in = _budget_sum_at_time(lak_budget, "EXT-INFLOW", time)
-        lake_external_out = -_budget_sum_at_time(lak_budget, "EXT-OUTFLOW", time)
+        # Retain both signs of the final-update MVR outlet residual in the external balance.
+        lake_outlet_in, lake_external_out = _gross_budget_flows(lak_budget, "EXT-OUTFLOW", time)
         withdrawal = -_budget_sum_at_time(lak_budget, "WITHDRAWAL", time)
         runoff = _budget_sum_at_time(lak_budget, "RUNOFF", time)
         constant = _budget_sum_at_time(lak_budget, "CONSTANT", time)
@@ -1307,7 +1380,7 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
         if boundary_term == "DRN" and boundary_in > 1.0e-12:
             raise RuntimeError("Outflow-only DRN unexpectedly reports groundwater inflow.")
         ghb_in, ghb_out = (boundary_in, boundary_out) if boundary_term == "GHB" else (0.0, 0.0)
-        surface_in = lake_external_in + max(runoff, 0.0) + max(constant, 0.0)
+        surface_in = lake_external_in + lake_outlet_in + max(runoff, 0.0) + max(constant, 0.0)
         surface_out = lake_external_out + withdrawal + max(-runoff, 0.0) + max(-constant, 0.0)
         total_in = infiltration + lake_rain + surface_in + boundary_in
         total_out = land_et + rejected + lake_evap + surface_out + boundary_out
@@ -1367,6 +1440,140 @@ def _write_flux_monitoring(handoff: Handoff, workspace: Path,
     qa_path.write_text(json.dumps(qa, indent=2) + "\n")
 
 
+def _check_mover_transfers(routing: dict, transfers: np.ndarray, to_mvr: np.ndarray,
+                           from_mvr: np.ndarray, external: np.ndarray) -> tuple[float, float]:
+    """Require every declared edge and both native LAK debit/credit records."""
+    count = routing["n_lakes"]
+    links = [r for r in routing["outlets"] if r["receiver"]]
+    expected = {(r["provider"], r["receiver"]) for r in links}
+    directed = {}
+    for row in transfers:
+        key = (int(row["node"]), int(row["node2"]))
+        q = float(row["q"])
+        if key in directed or key not in expected or not np.isfinite(q) or q > 0:
+            raise RuntimeError("Invalid, duplicated or misrouted MVR transfer.")
+        directed[key] = -q
+    if set(directed) != expected:
+        raise RuntimeError("Missing declared MVR transfer (including a zero-flow edge).")
+
+    def vector(records, expected_nodes):
+        values = {}
+        for row in records:
+            node, q = int(row["node"]), float(row["q"])
+            if (node in values or node not in expected_nodes or int(row["node2"]) != node or
+                    not np.isfinite(q)):
+                raise RuntimeError("Invalid or duplicated LAK MVR/external budget record.")
+            values[node] = q
+        if set(values) != expected_nodes:
+            raise RuntimeError("Missing LAK MVR/external budget record.")
+        return np.asarray([values[i] for i in range(1, count + 1)])
+
+    debit = vector(to_mvr, set(range(1, count + 1)))
+    credit = vector(from_mvr, set(range(1, count + 1)))
+    external_rates = vector(external, set(range(1, count + 1)))
+    expected_debit, expected_credit = np.zeros(count), np.zeros(count)
+    for (provider, receiver), q in directed.items():
+        expected_debit[provider - 1] -= q
+        expected_credit[receiver - 1] += q
+    errors = [float(np.max(abs(debit - expected_debit))), float(np.max(abs(credit - expected_credit)))]
+    maximum = max(errors, default=0.)
+    if maximum > 1e-8:
+        raise RuntimeError(f"MVR lake transfer debit/credit error: {maximum:.6g} m3/day.")
+    # MF6 recomputes outlet flow after its final mover update. Retain this
+    # small signed boundary residual; never discard it from the water balance.
+    external_residual = max((abs(float(external_rates[r["provider"] - 1])) for r in links), default=0.)
+    if external_residual > 1e-4:
+        raise RuntimeError(f"Internal-outlet external residual {external_residual:.6g} exceeds 0.0001 m3/day.")
+    return maximum, max(directed.values(), default=0.)
+
+
+def _check_lake_balances(incoming, outgoing, tolerance):
+    """Use relative closure for real flows and absolute closure near zero."""
+    residual = incoming - outgoing
+    denominator = .5 * (incoming + outgoing)
+    percent = np.divide(100. * residual, denominator, out=np.zeros_like(residual), where=denominator != 0.)
+    if np.any((abs(percent) > tolerance) & (abs(residual) > 1e-8)):
+        raise RuntimeError(f"Per-lake budget discrepancy exceeds {tolerance}% and 1e-8 m3/day: {percent}.")
+    return residual, percent
+
+
+def _lake_routing_budget_qa(workspace: Path, lake_budget, tolerance: float, *, write_output=True) -> dict:
+    routing = _read_lake_routing(workspace)
+    count = routing["n_lakes"]
+    links = [r for r in routing["outlets"] if r["receiver"]]
+    times = np.asarray(lake_budget.get_times(), dtype=float)
+    mover = None
+    if links:
+        mover = flopy.utils.CellBudgetFile(workspace / "bdam.mvr.bud", precision="double")
+        if not np.array_equal(np.asarray(mover.get_times()), times):
+            raise RuntimeError("MVR and LAK budget saved times differ.")
+        if any(row["paknam"].decode().strip().upper() != "LAK_MAIN" or
+               row["paknam2"].decode().strip().upper() != "LAK_MAIN" for row in mover.recordarray):
+            raise RuntimeError("Unexpected MVR provider or receiver package.")
+    names = {name.decode().strip() for name in lake_budget.get_unique_record_names()}
+    expected_names = {"GWF", "RAINFALL", "EVAPORATION", "RUNOFF", "EXT-INFLOW", "WITHDRAWAL",
+                      "EXT-OUTFLOW", "STORAGE", "CONSTANT"} | ({"TO-MVR", "FROM-MVR"} if links else set())
+    if names != expected_names:
+        raise RuntimeError(f"Unexpected or missing LAK budget terms: {names ^ expected_names}.")
+    maximum_error = maximum_transfer = maximum_residual = maximum_percent = maximum_external = 0.
+    audit_rows = []
+    for time in times:
+        records = {}
+        incoming, outgoing = np.zeros(count), np.zeros(count)
+        for name in sorted(names):
+            items = lake_budget.get_data(text=name, totim=time)
+            if len(items) != 1:
+                raise RuntimeError(f"Missing or duplicated LAK {name} record at {time}.")
+            records[name] = items[0]
+            for row in items[0]:
+                node, q = int(row["node"]) - 1, float(row["q"])
+                if node < 0 or node >= count or not np.isfinite(q):
+                    raise RuntimeError("Invalid per-lake budget entry.")
+                incoming[node] += max(q, 0.)
+                outgoing[node] += max(-q, 0.)
+        if links:
+            entries = mover.get_data(text="MOVER-FLOW", totim=time)
+            if len(entries) != 1:
+                raise RuntimeError(f"Missing or duplicated MVR transfer record at {time}.")
+            error, transfer = _check_mover_transfers(routing, entries[0], records["TO-MVR"],
+                                                    records["FROM-MVR"], records["EXT-OUTFLOW"])
+            maximum_error, maximum_transfer = max(maximum_error, error), max(maximum_transfer, transfer)
+            maximum_external = max(maximum_external, max(abs(float(records["EXT-OUTFLOW"][r["provider"] - 1]["q"]))
+                                                        for r in links))
+        residual, percent = _check_lake_balances(incoming, outgoing, tolerance)
+        maximum_residual = max(maximum_residual, float(np.max(abs(residual))))
+        maximum_percent = max(maximum_percent, float(np.max(abs(percent))))
+        for i in range(count):
+            audit_rows.append(dict(time=float(time), lake=i + 1, residual_m3_per_day=float(residual[i]),
+                                   percent_discrepancy=float(percent[i]),
+                                   from_mvr_m3_per_day=float(records["FROM-MVR"][i]["q"]) if links else 0.,
+                                   to_mvr_m3_per_day=float(records["TO-MVR"][i]["q"]) if links else 0.,
+                                   external_outflow_m3_per_day=-float(records["EXT-OUTFLOW"][i]["q"])))
+    audit_path = workspace / "bdam.lake_routing_balance.csv"
+    if write_output:
+        with audit_path.open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(audit_rows[0]))
+            writer.writeheader()
+            writer.writerows(audit_rows)
+    else:
+        with audit_path.open(newline="") as stream:
+            saved = list(csv.DictReader(stream))
+        if len(saved) != len(audit_rows) or any(
+                set(actual) != set(expected) or any(
+                    not np.isclose(float(actual[key]), value, atol=1e-10, rtol=1e-12)
+                    for key, value in expected.items()) for actual, expected in zip(saved, audit_rows)):
+            raise RuntimeError("Saved per-lake routing audit disagrees with native budgets.")
+    return dict(lake_routing_method="MVR", maximum_lak_to_lak_conservation_error_m3_per_day=maximum_error,
+                maximum_lak_to_lak_transfer_m3_per_day=maximum_transfer,
+                maximum_per_lake_budget_residual_m3_per_day=maximum_residual,
+                maximum_per_lake_budget_discrepancy_percent=maximum_percent,
+                internal_outlet_external_residual_tolerance_m3_per_day=1e-4,
+                maximum_internal_outlet_external_residual_m3_per_day=maximum_external,
+                per_lake_budget_discrepancy_tolerance_percent=tolerance,
+                per_lake_budget_absolute_tolerance_m3_per_day=1e-8,
+                lake_routing_balance_output="bdam.lake_routing_balance.csv")
+
+
 def _write_budget_qa(workspace: Path, discrepancy_tolerance_percent: float = 0.1) -> None:
     """Write and enforce compact, machine-readable whole-model budget QA."""
     required = ["bdam.lst", "bdam.cbc", "bdam.lak.bud", "bdam.uzf.bud"]
@@ -1400,28 +1607,13 @@ def _write_budget_qa(workspace: Path, discrepancy_tolerance_percent: float = 0.1
             "maximum_net_rate_m3_per_day": max(values),
         }
     lak_budget = flopy.utils.CellBudgetFile(workspace / "bdam.lak.bud", precision="double")
-    lak_record_names = {name.decode().strip() if isinstance(name, bytes) else str(name).strip()
-                        for name in lak_budget.get_unique_record_names()}
-    internal_records = lak_budget.get_data(text="FLOW-JA-FACE") if "FLOW-JA-FACE" in lak_record_names else []
-    internal_errors = []
-    internal_rates = []
-    for record in internal_records:
-        directed = {(int(row["node"]), int(row["node2"])): float(row["q"]) for row in record}
-        for (node, node2), rate in directed.items():
-            reverse = directed.get((node2, node))
-            if reverse is not None and node < node2:
-                internal_errors.append(abs(rate + reverse))
-                internal_rates.append(abs(rate))
-    max_internal_error = max(internal_errors, default=0.0)
-    if max_internal_error > 1.0e-8:
-        raise RuntimeError(f"LAK-to-LAK routed-flow conservation error is {max_internal_error:.6g} m3/day.")
+    routing_qa = _lake_routing_budget_qa(workspace, lak_budget, discrepancy_tolerance_percent)
     qa = {
         "status": "pass",
         "whole_model_discrepancy_tolerance_percent": discrepancy_tolerance_percent,
         "maximum_absolute_whole_model_discrepancy_percent": max_discrepancy,
         "gwf_budget_terms": term_summary,
-        "maximum_lak_to_lak_conservation_error_m3_per_day": max_internal_error,
-        "maximum_lak_to_lak_transfer_m3_per_day": max(internal_rates, default=0.0),
+        **routing_qa,
         "observation_csv_status": "MF6 observation files are optional; binary budgets are authoritative.",
         "required_outputs": required,
     }
@@ -1744,6 +1936,15 @@ def _validate_completed_workspace(handoff: Handoff, workspace: Path, expected_fi
         raise RuntimeError(f"Workspace has missing or empty required binary outputs: {empty}")
 
     nlakes = int(handoff.scalar("/surface_water/n_lakes"))
+    routing = _read_lake_routing(workspace)
+    if routing["n_lakes"] != nlakes:
+        raise RuntimeError("Lake routing manifest disagrees with the handoff.")
+    validate_lak_outlet_routes(workspace / "bdam.lak")
+    routing_budget = flopy.utils.CellBudgetFile(workspace / "bdam.lak.bud", precision="double")
+    try:
+        _lake_routing_budget_qa(workspace, routing_budget, 0.1, write_output=False)
+    finally:
+        routing_budget.close()
     nuzf = int(np.count_nonzero(mf3(handoff.array("/uzf/eligible_mask", bool))))
     head_reader = flopy.utils.HeadFile(workspace / "bdam.hds")
     try:

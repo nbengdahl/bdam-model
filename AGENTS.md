@@ -42,6 +42,19 @@ Follow this file exactly. Do not improvise around a failed or quiet run.
 
 ## Boundary contract
 
+Internal lake routing uses stock MF6 MVR with unchanged Manning/WEIR controls.
+Require `bdam.lake_routing.json`, `bdam.lake_routing_balance.csv` and
+`bdam.mvr.bud` when internal links exist. MVR debit/credit agreement remains
+1e-8 m3/day; the user-approved final-update external-residual limit is
+1e-4 m3/day per internal outlet. Keep both residual signs in gross external
+budgets. Per-lake closure uses 0.1% relative or 1e-8 m3/day absolute closure
+near zero. Whole-system limits, LAK/IMS settings and calendars are unchanged.
+Completion revalidation must check saved routing audits without rewriting them.
+Run `tools/verify_lake_drying.py` and `tools/verify_lake_mover_drying.py`
+separately after preparation. These bounded diagnostic schedules never produce
+production completion receipts. For viewer tests, set `BDAM_TEST_OUTPUT_ROOT`
+to the completed single-run output root so actual-output integration runs.
+
 The default is local outflow-only DRN; constant GHB is an explicit sensitivity
 option. Never infer downstream stages or groundwater heads from the upstream
 hydrograph, derive the surface outlet from a GHB head, or silently migrate old
@@ -111,7 +124,7 @@ python3 --version
 python3 -m pip install --user -r requirements.txt
 mkdir -p ../matplotlib-cache
 MPLCONFIGDIR=../matplotlib-cache \
-  python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py
+  python3 -m unittest discover -v -p 'test_*.py'
 ```
 
 All tests must pass. If dependency installation fails because network access

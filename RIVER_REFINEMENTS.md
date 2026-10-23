@@ -1,5 +1,23 @@
 # River formulation in v0.2.0
 
+## Current routing repair — 2026-10-22
+
+Internal Manning/WEIR outlets route 100% of their discharge through stock
+MF6 MVR to the existing next lake. Their serialized native receivers are
+external so the MVR credit is applied exactly once. The terminal outlet stays
+independent. This fixes receiving-lake availability during evaporation-limited
+recession; it adds no tailwater/backwater formulation. Pool geometry, physical
+controls and schema v6 are unchanged.
+
+`bdam.lake_routing.json` records the physical chain and hydraulic controls.
+`bdam.mvr.bud` and `bdam.lake_routing_balance.csv` audit every saved transfer
+and per-lake balance. Debit/credit agreement is 1e-8 m3/day. The approved
+final-update external-residual limit is 1e-4 m3/day per internal outlet,
+with both signs retained in gross external water balances. Internal MVR
+transfers are excluded from external totals. Per-lake closure uses 0.1%
+relative or 1e-8 m3/day absolute closure near zero; whole-system, LAK and
+IMS tolerances remain unchanged. See [validation](MVR_ROUTING_VALIDATION.md).
+
 The model targets comparative hydrologic balances rather than detailed channel hydraulics. Coarse LAK pools retain the 1 m terrain and groundwater grid without requiring a separate SFR reach for every groundwater cell.
 
 ## Selected formulation

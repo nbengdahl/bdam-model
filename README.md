@@ -9,6 +9,13 @@ calculation are unchanged.
 
 ## River formulation (v0.2.1)
 
+Internal lake outlets now transfer water through stock MF6 MVR, preserving
+their Manning/WEIR controls and the independent terminal outlet. This fixes
+the receiving-lake water-availability inconsistency during evaporation-limited
+recession. Routing, per-lake balances and paired MVR debits/credits are audited.
+The approved internal-outlet external-residual limit is 1e-4 m3/day; signed
+residuals remain in the external budget. See [routing validation](MVR_ROUTING_VALIDATION.md).
+
 The under-dam conductivity core is isotropic at the independent
 `dam_settings.under_dam_k_m_per_day` (default 1.0 m/day), regardless of background
 K. A one-cell plan-view halo (including diagonal
@@ -174,7 +181,7 @@ Run the fast Python checks. These tests do not launch MODFLOW:
 
 ```zsh
 mkdir -p ../matplotlib-cache
-MPLCONFIGDIR=../matplotlib-cache python3 -m unittest -v test_bdam_workflow.py test_coarse_river.py test_lake_drying.py
+MPLCONFIGDIR=../matplotlib-cache python3 -m unittest discover -v -p 'test_*.py'
 ```
 
 ## Configure the simulation
@@ -316,7 +323,8 @@ spinup count. Omit the flag for the complete configured model run.
 At dam installation, groundwater heads are carried forward without changing
 lake-footprint cells. UZF water contents are mapped by grid cell, with the
 configured initial water content used only for genuinely new UZF features,
-and both post-dam lakes inherit the final pre-dam river stage. The downstream
+and the pond stage conserves the merged upstream volume while the downstream
+pools retain their corresponding inherited states. The downstream
 external LAK outlet uses the same fixed model-edge invert before and after dam
 installation; it is not varied with the inflow hydrograph.
 
